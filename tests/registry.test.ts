@@ -116,63 +116,68 @@ describe('conversion catalogue', () => {
     }
   })
 
-  it('contains all five retired WordPress conversions', () => {
-    const legacy: [Quantity[], Quantity][] = [
-      [['cer', 'or'], 'eer'],
-      [['cer', 'or'], 'rr'],
-      [['cer', 'rr'], 'or'],
-      [['or'], 'smd'],
-      [['smd'], 'or'],
+  it('contains the five presets the WordPress post links to', () => {
+    const presets: [Quantity, Quantity][] = [
+      ['cer', 'eer'],
+      ['or', 'rr'],
+      ['rr', 'or'],
+      ['or', 'smd'],
+      ['smd', 'or'],
     ]
-    for (const [from, to] of legacy) {
-      expect(catalogEntry(from, to), `${from.join('+')} → ${to}`).toBeDefined()
+    for (const [from, to] of presets) {
+      expect(catalogEntry(from, to), `${from} → ${to}`).toBeDefined()
     }
   })
 
-  it('never lists a conversion whose target is one of its inputs', () => {
+  it('covers every ordered pair of distinct quantities', () => {
+    expect(CONVERSION_CATALOG).toHaveLength(
+      QUANTITY_ORDER.length * (QUANTITY_ORDER.length - 1),
+    )
+  })
+
+  it('never lists a conversion whose target is its own input', () => {
     for (const entry of CONVERSION_CATALOG) {
-      expect(entry.from).not.toContain(entry.to)
+      expect(entry.from).not.toBe(entry.to)
+    }
+  })
+
+  it('never demands and offers the same quantity', () => {
+    for (const entry of CONVERSION_CATALOG) {
+      for (const id of entry.requiredAnyOf) {
+        expect(entry.optional).not.toContain(id)
+      }
     }
   })
 
   it('matches the recorded shape', () => {
     const summary = CONVERSION_CATALOG.map(
       (entry) =>
-        `${entry.from.join('+')} → ${entry.to} [${entry.kind}] ${entry.routes
+        `${entry.from} → ${entry.to} [${entry.kind}] ${entry.routes
           .map((route) => route.id)
-          .join('/')}`,
+          .join('/')} +${entry.requiredAnyOf.join('|') || '—'} ?${entry.optional.join('|') || '—'}`,
     )
     expect(summary).toMatchInlineSnapshot(`
       [
-        "or → smd [approximate] cox/hh",
-        "smd → or [approximate] cox/hh",
-        "cer+eer → rr [exact] exact",
-        "cer+eer → or [exact] exact",
-        "cer+eer → smd [approximate] cox/hh/probit",
-        "cer+rr → eer [exact] exact",
-        "cer+rr → or [exact] exact",
-        "cer+rr → smd [approximate] cox/hh/probit",
-        "cer+or → eer [exact] exact",
-        "cer+or → rr [exact] exact",
-        "cer+or → smd [approximate] cox/hh/probit",
-        "cer+smd → eer [approximate] cox/hh/probit",
-        "cer+smd → rr [approximate] cox/hh/probit",
-        "cer+smd → or [approximate] cox/hh/probit",
-        "eer+rr → cer [exact] exact",
-        "eer+rr → or [exact] exact",
-        "eer+rr → smd [approximate] cox/hh/probit",
-        "eer+or → cer [exact] exact",
-        "eer+or → rr [exact] exact",
-        "eer+or → smd [approximate] cox/hh/probit",
-        "eer+smd → cer [approximate] cox/hh",
-        "eer+smd → rr [approximate] cox/hh",
-        "eer+smd → or [approximate] cox/hh",
-        "rr+or → cer [exact] exact",
-        "rr+or → eer [exact] exact",
-        "rr+or → smd [approximate] cox/hh/probit",
-        "rr+smd → cer [approximate] cox/hh",
-        "rr+smd → eer [approximate] cox/hh",
-        "rr+smd → or [approximate] cox/hh",
+        "cer → eer [exact] exact +rr|or ?—",
+        "cer → rr [exact] exact +eer|or ?—",
+        "cer → or [exact] exact +eer|rr ?—",
+        "cer → smd [approximate] cox/hh/probit +eer|rr|or ?—",
+        "eer → cer [exact] exact +rr|or ?—",
+        "eer → rr [exact] exact +cer|or ?—",
+        "eer → or [exact] exact +cer|rr ?—",
+        "eer → smd [approximate] cox/hh/probit +cer|rr|or ?—",
+        "rr → cer [exact] exact +eer|or ?—",
+        "rr → eer [exact] exact +cer|or ?—",
+        "rr → or [exact] exact +cer|eer ?—",
+        "rr → smd [approximate] cox/hh/probit +cer|eer|or ?—",
+        "or → cer [exact] exact +eer|rr ?—",
+        "or → eer [exact] exact +cer|rr ?—",
+        "or → rr [exact] exact +cer|eer ?—",
+        "or → smd [approximate] cox/hh +— ?cer|eer|rr",
+        "smd → cer [approximate] cox/hh +eer|rr ?—",
+        "smd → eer [approximate] cox/hh/probit +cer|rr ?—",
+        "smd → rr [approximate] cox/hh/probit +cer|eer ?—",
+        "smd → or [approximate] cox/hh +— ?cer",
       ]
     `)
   })

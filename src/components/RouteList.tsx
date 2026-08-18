@@ -4,19 +4,29 @@ import { fmtNumber } from '@/lib/es/format'
 import { QUANTITIES } from '@/lib/es/quantities'
 import type { Solution } from '@/lib/es/types'
 
-export function RouteList({ solution }: { solution: Solution }) {
+export interface RouteListProps {
+  solution: Solution
+  /** Shown in place of a number while the requirement is still unmet. */
+  pendingNote: string
+}
+
+export function RouteList({ solution, pendingNote }: RouteListProps) {
   const approximate = solution.routes.filter(
     (route) => route.kind === 'approximate' && Number.isFinite(route.value),
   )
 
+  // Same presentation as a blocked route: the reader is looking at a card
+  // that names what is missing, not at an error.
   if (solution.routes.length === 0) {
     return (
-      <Alert>
-        <AlertDescription>
-          {solution.message ??
-            `Enter the inputs above to compute ${QUANTITIES[solution.target].short}.`}
-        </AlertDescription>
-      </Alert>
+      <div className="space-y-3 rounded-lg border border-dashed p-4 opacity-70">
+        <div className="text-sm font-semibold">
+          {QUANTITIES[solution.target].short}
+        </div>
+        <p className="text-sm text-[hsl(var(--muted-foreground))]">
+          {pendingNote}
+        </p>
+      </div>
     )
   }
 

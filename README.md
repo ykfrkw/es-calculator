@@ -59,9 +59,21 @@ Running an SMD backwards, the probit seeds **EER** (not OR); feeding that back t
 
 An event that is more likely in the experimental arm gives a positive *d*. If the event is a harm, a positive *d* is the worse result. If the odds ratio came from dichotomising a continuous scale, the sign depends on which direction was counted as response. Nothing in the arithmetic can detect a sign error, so check it against the source paper.
 
+## Using it
+
+Pick **one** quantity to convert from and **one** to convert to. Anything else the conversion needs is then prompted for as a field rather than expressed in the picker.
+
+Because any two of CER, EER, RR and OR determine all four, a binary-to-binary conversion asks for one more binary — `OR → RR` shows an **"Also needed — fill in any one of these"** block offering CER and EER, and filling either one is enough. Conversions to or from an SMD ask for whatever the chosen route needs, and `OR → SMD` and `SMD → OR` need nothing extra at all: there the event rates sit in a separate dashed **"Optional — adds the probit method"** block. A quantity never appears in both blocks.
+
+Until the requirement is met the result area names what is missing instead of showing a number.
+
 ## Deep links
 
-The picker state lives in the query string: `?from=cer,or&to=eer`, with optional numeric prefills (`&cer=0.2&or=2.15`). Unknown ids are dropped and a self-contradictory link falls back to the default state — a stale link never renders an error. The tool writes the URL back with `history.replaceState` only, so an embedded copy cannot hijack the reader's Back button.
+The picker state lives in the query string: `?from=or&to=rr`, with optional numeric prefills (`&or=2.15&cer=0.2`) that satisfy the "Also needed" block on load. The five presets the blog post links to are:
+
+`?from=cer&to=eer` · `?from=or&to=rr` · `?from=rr&to=or` · `?from=or&to=smd` · `?from=smd&to=or`
+
+`from` was a comma-separated list in an earlier revision. Those links still work: the first valid id wins and the rest are dropped silently. Unknown ids are dropped and a self-contradictory link falls back to the default state — a stale link never renders an error. The tool writes the URL back with `history.replaceState` only, so an embedded copy cannot hijack the reader's Back button.
 
 ## References
 

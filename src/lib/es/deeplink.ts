@@ -1,18 +1,18 @@
-import { QUANTITY_ORDER, orderQuantities } from './quantities'
+import { QUANTITY_ORDER } from './quantities'
 import type { Quantity } from './types'
 
 /** Raw field text, keyed by quantity — the UI holds strings, not numbers. */
 export type ValueDraft = Partial<Record<Quantity, string>>
 
 export interface DeeplinkState {
-  from: Quantity[]
+  from: Quantity
   to: Quantity
   values: ValueDraft
 }
 
 /** What an absent, empty or unparseable query string resolves to. */
 export const DEFAULT_STATE: DeeplinkState = {
-  from: ['cer', 'eer'],
+  from: 'or',
   to: 'smd',
   values: {},
 }
@@ -32,29 +32,27 @@ function readParams(search: string): URLSearchParams | undefined {
 }
 
 /**
- * Parse `?from=cer,or&to=eer` plus optional numeric prefills.
+ * Parse `?from=or&to=rr` plus optional numeric prefills.
  *
- * Anything unrecognised is dropped and anything self-contradictory falls back
- * to the default state. A reader who follows a stale link should land on a
- * working page, never on an error.
+ * `from` is a single quantity now, but links minted while it was a list are
+ * still in the wild: a comma form keeps its first valid id and drops the
+ * rest silently. Anything self-contradictory falls back to the default
+ * state — a reader following a stale link should land on a working page,
+ * never on an error.
  */
 export function parseDeeplink(search: string): DeeplinkState {
   const params = readParams(search ?? '')
   if (!params) return DEFAULT_STATE
 
-  const from = orderQuantities([
-    ...new Set(
-      (params.get('from') ?? '')
-        .split(',')
-        .map((token) => token.trim().toLowerCase())
-        .filter(isQuantity),
-    ),
-  ])
+  const from = (params.get('from') ?? '')
+    .split(',')
+    .map((token) => token.trim().toLowerCase())
+    .find(isQuantity)
   const rawTo = (params.get('to') ?? '').trim().toLowerCase()
 
-  if (from.length === 0) return DEFAULT_STATE
+  if (from === undefined) return DEFAULT_STATE
   if (!isQuantity(rawTo)) return DEFAULT_STATE
-  if (from.includes(rawTo)) return DEFAULT_STATE
+  if (from === rawTo) return DEFAULT_STATE
 
   const values: ValueDraft = {}
   for (const id of QUANTITY_ORDER) {
@@ -71,7 +69,7 @@ export function parseDeeplink(search: string): DeeplinkState {
 /** The query string for a state, in a stable order so writes are idempotent. */
 export function buildDeeplink(state: DeeplinkState): string {
   const params = new URLSearchParams()
-  params.set('from', orderQuantities(state.from).join(','))
+  params.set('from', state.from)
   params.set('to', state.to)
   for (const id of QUANTITY_ORDER) {
     const text = state.values[id]?.trim()

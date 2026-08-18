@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { requiredInputs, solve } from '@/lib/es/solve'
 import { QUANTITY_ORDER } from '@/lib/es/quantities'
-import type { Quantity, Values } from '@/lib/es/types'
+import type { Values } from '@/lib/es/types'
 
 describe('OR → SMD', () => {
   const solution = solve({ or: 2 }, 'smd')
@@ -187,38 +187,43 @@ describe('invariants', () => {
 })
 
 describe('requiredInputs', () => {
-  it('asks only for what was picked when nothing is blocked', () => {
-    expect(requiredInputs(['cer', 'eer'], 'smd')).toEqual({
-      required: ['cer', 'eer'],
+  // The exhaustive (from, to) sweep lives in tests/requirements.test.ts;
+  // these pin the shapes the input panel branches on.
+  it('demands the single missing piece for an exact conversion', () => {
+    expect(requiredInputs('cer', 'eer')).toEqual({
+      from: 'cer',
+      to: 'eer',
+      requiredAnyOf: ['rr', 'or'],
       optional: [],
+      unreachable: false,
     })
   })
 
   it('offers the rates that would add the probit method', () => {
-    expect(requiredInputs(['or'], 'smd')).toEqual({
-      required: ['or'],
+    expect(requiredInputs('or', 'smd')).toEqual({
+      from: 'or',
+      to: 'smd',
+      requiredAnyOf: [],
       optional: ['cer', 'eer', 'rr'],
+      unreachable: false,
     })
   })
 
   // Only CER: a lone EER or RR still leaves the probit without a second
   // rate, because two of the four exact quantities are needed to close.
   it('offers CER when inverting an SMD', () => {
-    expect(requiredInputs(['smd'], 'or')).toEqual({
-      required: ['smd'],
+    expect(requiredInputs('smd', 'or')).toEqual({
+      from: 'smd',
+      to: 'or',
+      requiredAnyOf: [],
       optional: ['cer'],
+      unreachable: false,
     })
   })
 
-  it('adds nothing for a purely exact conversion', () => {
-    expect(requiredInputs(['cer', 'or'], 'eer')).toEqual({
-      required: ['cer', 'or'],
-      optional: [],
-    })
-  })
-
-  it('drops the target from the required list', () => {
-    const picked: Quantity[] = ['cer', 'eer']
-    expect(requiredInputs(picked, 'eer').required).toEqual(['cer'])
+  it('never asks for the target or the source', () => {
+    const requirement = requiredInputs('or', 'rr')
+    expect(requirement.requiredAnyOf).not.toContain('or')
+    expect(requirement.requiredAnyOf).not.toContain('rr')
   })
 })

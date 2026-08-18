@@ -22,7 +22,8 @@ import {
   parseDeeplink,
   type DeeplinkState,
 } from '@/lib/es/deeplink'
-import { QUANTITIES } from '@/lib/es/quantities'
+import { QUANTITIES, QUANTITY_ORDER, listQuantities } from '@/lib/es/quantities'
+import { catalogEntry } from '@/lib/es/registry'
 import { requiredInputs, solve } from '@/lib/es/solve'
 import { W } from '@/lib/es/warnings'
 import type {
@@ -41,18 +42,44 @@ function toProportion(value: number, id: Quantity, rateUnit: RateUnit): number {
   return value / 100
 }
 
+/** The fields the form is currently showing, in the order it shows them. */
+function activeFields(requirement: InputRequirement): Quantity[] {
+  return [
+    requirement.from,
+    ...requirement.requiredAnyOf,
+    ...requirement.optional,
+  ]
+}
+
 function numericValues(
   state: DeeplinkState,
   requirement: InputRequirement,
   rateUnit: RateUnit,
 ): Values {
   const values: Values = {}
-  for (const id of [...requirement.required, ...requirement.optional]) {
+  for (const id of activeFields(requirement)) {
     const parsed = parseNumeric(state.values[id] ?? '')
     if (parsed === undefined) continue
     values[id] = toProportion(parsed, id, rateUnit)
   }
   return values
+}
+
+/** What the result area says while the conversion cannot yet be attempted. */
+function pendingNote(
+  requirement: InputRequirement,
+  hasAnyInput: boolean,
+): string {
+  const target = QUANTITIES[requirement.to].short
+  if (!hasAnyInput) {
+    return `Enter ${QUANTITIES[requirement.from].short} above to compute ${target}.`
+  }
+  if (requirement.requiredAnyOf.length === 0) {
+    return `Check the values above — ${target} could not be computed from them.`
+  }
+  return requirement.requiredAnyOf.length === 1
+    ? `Needs ${QUANTITIES[requirement.requiredAnyOf[0]].short} as well — ${QUANTITIES[requirement.from].short} on its own does not fix ${target}.`
+    : `Needs ${listQuantities(requirement.requiredAnyOf)} as well — any one of them is enough to fix ${target}.`
 }
 
 function App() {
@@ -83,24 +110,36 @@ function App() {
     [state.from, state.to],
   )
 
-  const solution = useMemo(
-    () => solve(numericValues(state, requirement, rateUnit), state.to),
+  const known = useMemo(
+    () => numericValues(state, requirement, rateUnit),
     [state, requirement, rateUnit],
   )
 
-  const setFrom = (from: Quantity[]): void => {
-    setState((current) => {
-      const to = from.includes(current.to)
-        ? (['smd', 'or', 'rr', 'eer', 'cer'] as Quantity[]).find(
-            (candidate) => !from.includes(candidate),
-          )!
-        : current.to
-      return { ...current, from, to }
-    })
+  const solution = useMemo(() => solve(known, state.to), [known, state.to])
+
+  // Picking a quantity that is already on the other side would leave the
+  // pair invalid, so the other side steps aside to the next free option.
+  const setFrom = (from: Quantity): void => {
+    setState((current) => ({
+      ...current,
+      from,
+      to:
+        current.to === from
+          ? QUANTITY_ORDER.find((candidate) => candidate !== from)!
+          : current.to,
+    }))
   }
 
-  const setTo = (to: Quantity): void =>
-    setState((current) => ({ ...current, to }))
+  const setTo = (to: Quantity): void => {
+    setState((current) => ({
+      ...current,
+      to,
+      from:
+        current.from === to
+          ? QUANTITY_ORDER.find((candidate) => candidate !== to)!
+          : current.from,
+    }))
+  }
 
   const setValue = (id: Quantity, value: string): void =>
     setState((current) => ({
@@ -108,10 +147,14 @@ function App() {
       values: { ...current.values, [id]: value },
     }))
 
-  const recipe = `${state.from
-    .map((id) => QUANTITIES[id].short)
-    .join(' + ')} → ${QUANTITIES[state.to].short}`
-  const isExact = solution.routes.every((route) => route.kind === 'exact')
+  const recipe = `${QUANTITIES[state.from].short} → ${QUANTITIES[state.to].short}`
+  // The badge describes the conversion itself, not whether the reader has
+  // finished typing — an unfilled form does not make exact algebra unavailable.
+  const conversionKind = catalogEntry(state.from, state.to)?.kind
+  const requirementSatisfied =
+    requirement.requiredAnyOf.length === 0 ||
+    requirement.requiredAnyOf.some((id) => known[id] !== undefined)
+  const hasAnyInput = Object.keys(known).length > 0
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 text-[hsl(var(--foreground))]">
@@ -127,12 +170,21 @@ function App() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <QuantityPicker
-            from={state.from}
-            to={state.to}
-            onFromChange={setFrom}
-            onToChange={setTo}
-          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <QuantityPicker
+              label="Convert from"
+              value={state.from}
+              disabled={state.to}
+              onChange={setFrom}
+              caption="One quantity in. Anything else the conversion needs is asked for below."
+            />
+            <QuantityPicker
+              label="Convert to"
+              value={state.to}
+              disabled={state.from}
+              onChange={setTo}
+            />
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-md bg-[hsl(var(--secondary))] px-3 py-1.5 font-mono text-sm text-[hsl(var(--secondary-foreground))]">
@@ -140,16 +192,16 @@ function App() {
             </span>
             <span
               className={
-                isExact && solution.routes.length > 0
+                conversionKind === 'exact'
                   ? 'rounded-md bg-[hsl(var(--secondary))] px-2 py-1 text-xs font-medium text-[hsl(var(--secondary-foreground))]'
                   : 'rounded-md border border-amber-500/50 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300'
               }
             >
-              {solution.routes.length === 0
-                ? 'Not available'
-                : isExact
-                  ? 'Exact'
-                  : 'Approximate'}
+              {conversionKind === 'exact'
+                ? 'Exact'
+                : conversionKind === 'approximate'
+                  ? 'Approximate'
+                  : 'Not available'}
             </span>
           </div>
 
@@ -172,6 +224,7 @@ function App() {
             requirement={requirement}
             values={state.values}
             rateUnit={rateUnit}
+            satisfied={requirementSatisfied}
             onChange={setValue}
           />
 
@@ -187,7 +240,10 @@ function App() {
             </Alert>
           )}
 
-          <RouteList solution={solution} />
+          <RouteList
+            solution={solution}
+            pendingNote={pendingNote(requirement, hasAnyInput)}
+          />
 
           <DerivedStrip
             derived={solution.derived}

@@ -1,10 +1,5 @@
-import { QUANTITIES } from '@/lib/es/quantities'
+import { QUANTITIES, listQuantities } from '@/lib/es/quantities'
 import { CONVERSION_CATALOG } from '@/lib/es/registry'
-import type { Quantity } from '@/lib/es/types'
-
-function shortList(ids: Quantity[]): string {
-  return ids.map((id) => QUANTITIES[id].short).join(' + ')
-}
 
 const METHOD_LABELS: Record<string, string> = {
   exact: 'algebra',
@@ -22,18 +17,26 @@ export function ConversionCatalog() {
           <tr className="border-b text-xs uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
             <th className="py-2 pr-3 font-medium">From</th>
             <th className="py-2 pr-3 font-medium">To</th>
+            <th className="py-2 pr-3 font-medium">Also needed</th>
             <th className="py-2 pr-3 font-medium">Kind</th>
             <th className="py-2 font-medium">Routes</th>
           </tr>
         </thead>
         <tbody>
           {CONVERSION_CATALOG.map((entry) => (
-            <tr key={`${entry.from.join(',')}-${entry.to}`} className="border-b">
+            <tr key={`${entry.from}-${entry.to}`} className="border-b">
               <td className="whitespace-nowrap py-1.5 pr-3 font-mono">
-                {shortList(entry.from)}
+                {QUANTITIES[entry.from].short}
               </td>
               <td className="whitespace-nowrap py-1.5 pr-3 font-mono">
                 {QUANTITIES[entry.to].short}
+              </td>
+              <td className="py-1.5 pr-3">
+                {entry.requiredAnyOf.length > 0
+                  ? `any one of ${listQuantities(entry.requiredAnyOf)}`
+                  : entry.optional.length > 0
+                    ? `— (${listQuantities(entry.optional)} optional)`
+                    : '—'}
               </td>
               <td className="py-1.5 pr-3">
                 {entry.kind === 'exact' ? 'Exact' : 'Approximate'}

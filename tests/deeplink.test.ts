@@ -5,32 +5,63 @@ import {
   parseDeeplink,
 } from '@/lib/es/deeplink'
 
-/** The URLs the retired WordPress forms are replaced by. */
-const LEGACY_LINKS: [string, string[], string][] = [
-  ['?from=cer,or&to=eer', ['cer', 'or'], 'eer'],
-  ['?from=cer,or&to=rr', ['cer', 'or'], 'rr'],
-  ['?from=cer,rr&to=or', ['cer', 'rr'], 'or'],
-  ['?from=or&to=smd', ['or'], 'smd'],
-  ['?from=smd&to=or', ['smd'], 'or'],
+/** The presets the WordPress post links to. */
+const PRESET_LINKS: [string, string, string][] = [
+  ['?from=cer&to=eer', 'cer', 'eer'],
+  ['?from=or&to=rr', 'or', 'rr'],
+  ['?from=rr&to=or', 'rr', 'or'],
+  ['?from=or&to=smd', 'or', 'smd'],
+  ['?from=smd&to=or', 'smd', 'or'],
 ]
 
-describe('legacy deep links', () => {
-  it.each(LEGACY_LINKS)('%s parses', (search, from, to) => {
+describe('preset deep links', () => {
+  it.each(PRESET_LINKS)('%s parses', (search, from, to) => {
     const state = parseDeeplink(search)
-    expect(state.from).toEqual(from)
+    expect(state.from).toBe(from)
     expect(state.to).toBe(to)
     expect(state.values).toEqual({})
   })
 })
 
+/**
+ * `from` used to be a comma-separated list. Links minted then are still in
+ * the wild, so they degrade to their first id rather than erroring.
+ */
+describe('legacy comma form', () => {
+  it.each([
+    ['?from=cer,or&to=eer', 'cer', 'eer'],
+    ['?from=cer,or&to=rr', 'cer', 'rr'],
+    ['?from=cer,rr&to=or', 'cer', 'or'],
+    ['?from=or,cer&to=smd', 'or', 'smd'],
+  ])('%s keeps the first id', (search, from, to) => {
+    const state = parseDeeplink(search)
+    expect(state.from).toBe(from)
+    expect(state.to).toBe(to)
+  })
+
+  it('skips leading junk to reach the first valid id', () => {
+    expect(parseDeeplink('?from=zzz,or&to=rr').from).toBe('or')
+  })
+
+  it('falls back when the surviving id collides with the target', () => {
+    expect(parseDeeplink('?from=eer,cer&to=eer')).toEqual(DEFAULT_STATE)
+  })
+
+  it('carries prefills across the legacy form', () => {
+    const state = parseDeeplink('?from=cer,or&to=rr&cer=0.2&or=2.15')
+    expect(state.from).toBe('cer')
+    expect(state.values).toEqual({ cer: '0.2', or: '2.15' })
+  })
+})
+
 describe('prefills', () => {
   it('reads numeric values for the quantities it knows', () => {
-    const state = parseDeeplink('?from=cer,or&to=eer&cer=0.2&or=2.15')
+    const state = parseDeeplink('?from=cer&to=eer&cer=0.2&or=2.15')
     expect(state.values).toEqual({ cer: '0.2', or: '2.15' })
   })
 
   it('drops values that are not numbers', () => {
-    const state = parseDeeplink('?from=cer,or&to=eer&cer=abc&or=&rr=1.5')
+    const state = parseDeeplink('?from=cer&to=eer&cer=abc&or=&rr=1.5')
     expect(state.values).toEqual({ rr: '1.5' })
   })
 
@@ -41,18 +72,22 @@ describe('prefills', () => {
 })
 
 describe('normalisation', () => {
-  it('orders and deduplicates the from set', () => {
-    expect(parseDeeplink('?from=or,cer,or&to=eer').from).toEqual(['cer', 'or'])
+  it('ignores repeats of the same id', () => {
+    expect(parseDeeplink('?from=or,or,or&to=eer').from).toBe('or')
   })
 
-  it('ignores unknown ids inside a usable from set', () => {
-    expect(parseDeeplink('?from=cer,zzz,or&to=eer').from).toEqual(['cer', 'or'])
+  it('ignores unknown ids', () => {
+    expect(parseDeeplink('?from=zzz,cer&to=eer').from).toBe('cer')
   })
 
   it('is case insensitive', () => {
-    const state = parseDeeplink('?from=CER,OR&to=EER')
-    expect(state.from).toEqual(['cer', 'or'])
+    const state = parseDeeplink('?from=OR&to=EER')
+    expect(state.from).toBe('or')
     expect(state.to).toBe('eer')
+  })
+
+  it('trims whitespace', () => {
+    expect(parseDeeplink('?from= or &to= rr ').from).toBe('or')
   })
 })
 
@@ -73,8 +108,7 @@ describe('junk never throws and never errors out', () => {
   it.each(junk)('%s', (search) => {
     expect(() => parseDeeplink(search)).not.toThrow()
     const state = parseDeeplink(search)
-    expect(state.from.length).toBeGreaterThan(0)
-    expect(state.from).not.toContain(state.to)
+    expect(state.from).not.toBe(state.to)
   })
 
   it.each([
@@ -90,30 +124,36 @@ describe('junk never throws and never errors out', () => {
 })
 
 describe('round trip', () => {
-  it.each(LEGACY_LINKS)('%s survives build → parse', (search) => {
+  it.each(PRESET_LINKS)('%s survives build → parse', (search) => {
     const once = parseDeeplink(search)
     expect(parseDeeplink(buildDeeplink(once))).toEqual(once)
   })
 
   it('is idempotent with prefills', () => {
-    const once = parseDeeplink('?from=cer,or&to=eer&cer=0.2&or=2.15')
+    const once = parseDeeplink('?from=cer&to=eer&cer=0.2&or=2.15')
     const twice = parseDeeplink(buildDeeplink(once))
     expect(twice).toEqual(once)
     expect(buildDeeplink(twice)).toBe(buildDeeplink(once))
   })
 
-  it('writes the from set in canonical order regardless of input order', () => {
-    expect(buildDeeplink({ from: ['or', 'cer'], to: 'eer', values: {} })).toBe(
-      '?from=cer%2Cor&to=eer',
+  it('writes a single from id', () => {
+    expect(buildDeeplink({ from: 'or', to: 'eer', values: {} })).toBe(
+      '?from=or&to=eer',
+    )
+  })
+
+  it('normalises a legacy link to the single form on the way back out', () => {
+    expect(buildDeeplink(parseDeeplink('?from=cer,or&to=rr'))).toBe(
+      '?from=cer&to=rr',
     )
   })
 
   it('omits blank and unparseable prefills', () => {
     const link = buildDeeplink({
-      from: ['cer', 'or'],
+      from: 'cer',
       to: 'eer',
       values: { cer: '  ', or: 'abc', rr: '1.5' },
     })
-    expect(link).toBe('?from=cer%2Cor&to=eer&rr=1.5')
+    expect(link).toBe('?from=cer&to=eer&rr=1.5')
   })
 })

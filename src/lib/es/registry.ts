@@ -1,5 +1,5 @@
 import { QUANTITY_ORDER } from './quantities'
-import { solve } from './solve'
+import { requiredInputs, solve } from './solve'
 import type { Kind, Quantity, Values } from './types'
 
 /**
@@ -22,30 +22,23 @@ export interface CatalogRoute {
 }
 
 export interface CatalogEntry {
-  from: Quantity[]
+  from: Quantity
   to: Quantity
   /** 'exact' when the conversion needs no latent-variable assumption. */
   kind: Kind
-  /** Routes that actually resolve, in the order the tool shows them. */
+  /** Any one of these must also be supplied. Empty when `from` suffices. */
+  requiredAnyOf: Quantity[]
+  /** Not needed, but each unlocks a further route. */
+  optional: Quantity[]
+  /** Routes that resolve once the requirement is met, in display order. */
   routes: CatalogRoute[]
   /** Rule and method ids used, for cross-checking against the engine. */
   sources: string[]
 }
 
-/** Every 1- and 2-element subset of the quantities, in canonical order. */
-function inputSubsets(): Quantity[][] {
-  const subsets: Quantity[][] = QUANTITY_ORDER.map((id) => [id])
-  for (let i = 0; i < QUANTITY_ORDER.length; i += 1) {
-    for (let j = i + 1; j < QUANTITY_ORDER.length; j += 1) {
-      subsets.push([QUANTITY_ORDER[i], QUANTITY_ORDER[j]])
-    }
-  }
-  return subsets
-}
-
-function probe(from: Quantity[]): Values {
+function probe(ids: Quantity[]): Values {
   const values: Values = {}
-  for (const id of from) values[id] = SENTINELS[id]
+  for (const id of ids) values[id] = SENTINELS[id]
   return values
 }
 
@@ -57,11 +50,19 @@ function probe(from: Quantity[]): Values {
 function buildCatalog(): CatalogEntry[] {
   const entries: CatalogEntry[] = []
 
-  for (const from of inputSubsets()) {
+  for (const from of QUANTITY_ORDER) {
     for (const to of QUANTITY_ORDER) {
-      if (from.includes(to)) continue
+      if (from === to) continue
 
-      const solution = solve(probe(from), to)
+      const requirement = requiredInputs(from, to)
+      // Probe with the cheapest satisfying input so the routes the reader
+      // will actually see are the ones recorded.
+      const supplied: Quantity[] = [from]
+      if (requirement.requiredAnyOf.length > 0) {
+        supplied.push(requirement.requiredAnyOf[0])
+      }
+
+      const solution = solve(probe(supplied), to)
       const live = solution.routes.filter((route) =>
         Number.isFinite(route.value),
       )
@@ -73,6 +74,8 @@ function buildCatalog(): CatalogEntry[] {
         kind: live.every((route) => route.kind === 'exact')
           ? 'exact'
           : 'approximate',
+        requiredAnyOf: requirement.requiredAnyOf,
+        optional: requirement.optional,
         routes: live.map((route) => ({
           id: route.id,
           label: route.label,
@@ -92,11 +95,10 @@ export const CONVERSION_CATALOG: CatalogEntry[] = buildCatalog()
 
 /** Catalogue lookup for a given picker state. */
 export function catalogEntry(
-  from: Quantity[],
+  from: Quantity,
   to: Quantity,
 ): CatalogEntry | undefined {
-  const key = [...from].sort().join(',')
   return CONVERSION_CATALOG.find(
-    (entry) => entry.to === to && [...entry.from].sort().join(',') === key,
+    (entry) => entry.from === from && entry.to === to,
   )
 }

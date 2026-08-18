@@ -310,30 +310,90 @@ export function solve(known: Values, target: Quantity): Solution {
 }
 
 /**
- * What the input panel should render: the quantities the reader picked, plus
- * the ones that would light up a route that is currently blocked.
+ * Which routes exist for a set of inputs, decided on ids alone.
+ *
+ * The picker has to answer "what else do you need?" before any number is
+ * typed, so reachability is worked out from the rule graph rather than by
+ * probing with sentinel values that might contradict what was entered.
  */
-export function requiredInputs(
-  from: Quantity[],
+function symbolicRoutes(
+  supplied: Quantity[],
   target: Quantity,
-): InputRequirement {
-  const required = orderQuantities(from.filter((id) => id !== target))
-  const closure = symbolicClosure(required)
+): { exact: boolean; approximate: string[] } {
+  const closure = symbolicClosure(supplied)
+  if (closure.has(target)) return { exact: true, approximate: [] }
 
-  const wanted = new Set<Quantity>()
-  for (const method of APPROX_METHODS) {
-    const needs =
-      target === 'smd'
-        ? method.needs
-        : required.includes('smd')
-          ? inverseNeeds(method)
-          : []
-    if (needs.length === 0) continue
-    if (needs.every((id) => closure.has(id))) continue
-    for (const candidate of unblockers(required, needs)) {
-      if (candidate !== target) wanted.add(candidate)
+  if (target === 'smd') {
+    return {
+      exact: false,
+      approximate: APPROX_METHODS.filter((method) =>
+        method.needs.every((id) => closure.has(id)),
+      ).map((method) => method.id),
     }
   }
 
-  return { required, optional: orderQuantities([...wanted]) }
+  if (!supplied.includes('smd')) return { exact: false, approximate: [] }
+
+  const base = supplied.filter((id) => id !== 'smd')
+  const baseClosure = symbolicClosure(base)
+  return {
+    exact: false,
+    approximate: APPROX_METHODS.filter(
+      (method) =>
+        inverseNeeds(method).every((id) => baseClosure.has(id)) &&
+        // Seeding something already in hand adds nothing, exactly as
+        // fromSmdRoute refuses to do at run time.
+        !baseClosure.has(method.seeds) &&
+        symbolicClosure([...base, method.seeds]).has(target),
+    ).map((method) => method.id),
+  }
+}
+
+/**
+ * What the input panel should render for one (from → to) pair.
+ *
+ * Exact additions win over approximate ones: offering a latent-variable
+ * conversion as an equal alternative to algebra would quietly invite the
+ * reader to take an assumption they did not need.
+ */
+export function requiredInputs(
+  from: Quantity,
+  to: Quantity,
+): InputRequirement {
+  const candidates = QUANTITY_ORDER.filter((id) => id !== from && id !== to)
+  const base = symbolicRoutes([from], to)
+
+  if (!base.exact && base.approximate.length === 0) {
+    const exactAdds = candidates.filter(
+      (candidate) => symbolicRoutes([from, candidate], to).exact,
+    )
+    const requiredAnyOf =
+      exactAdds.length > 0
+        ? exactAdds
+        : candidates.filter(
+            (candidate) =>
+              symbolicRoutes([from, candidate], to).approximate.length > 0,
+          )
+    return {
+      from,
+      to,
+      requiredAnyOf: orderQuantities(requiredAnyOf),
+      optional: [],
+      unreachable: requiredAnyOf.length === 0,
+    }
+  }
+
+  const optional = candidates.filter((candidate) => {
+    const added = symbolicRoutes([from, candidate], to)
+    if (!base.exact && added.exact) return true
+    return added.approximate.some((id) => !base.approximate.includes(id))
+  })
+
+  return {
+    from,
+    to,
+    requiredAnyOf: [],
+    optional: orderQuantities(optional),
+    unreachable: false,
+  }
 }
