@@ -1,28 +1,32 @@
-import { QUANTITIES, QUANTITY_ORDER } from '@/lib/es/quantities'
-import type { Quantity } from '@/lib/es/types'
+import {
+  SELECTIONS,
+  SELECTION_ORDER,
+  type Selection,
+} from '@/lib/es/selections'
 import { cn } from '@/lib/utils'
 
-export interface QuantityPickerProps {
+export interface ConversionPickerProps {
   label: string
-  value: Quantity
+  value: Selection
   /** Already taken by the other row, so not selectable here. */
-  disabled: Quantity
-  onChange: (value: Quantity) => void
+  disabled: Selection
+  onChange: (value: Selection) => void
   caption?: string
 }
 
 /**
- * One quantity in, one quantity out. Everything else the conversion needs is
- * prompted for as a field, so the picker never has to express a combination.
+ * One side of the conversion in, one out. Everything else the conversion
+ * needs is prompted for as a field, so the picker never has to express a
+ * combination.
  */
-export function QuantityPicker({
+export function ConversionPicker({
   label,
   value,
   disabled,
   onChange,
   caption,
-}: QuantityPickerProps) {
-  const selectable = QUANTITY_ORDER.filter((id) => id !== disabled)
+}: ConversionPickerProps) {
+  const selectable = SELECTION_ORDER.filter((id) => id !== disabled)
 
   const move = (delta: number): void => {
     if (selectable.length === 0) return
@@ -34,7 +38,7 @@ export function QuantityPicker({
     <div className="space-y-1.5">
       <div className="text-sm font-medium leading-none">{label}</div>
       <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-        {QUANTITY_ORDER.map((id) => {
+        {SELECTION_ORDER.map((id) => {
           const isDisabled = id === disabled
           const selected = id === value
           return (
@@ -57,8 +61,8 @@ export function QuantityPicker({
               }}
               title={
                 isDisabled
-                  ? `${QUANTITIES[id].short} is already on the other side`
-                  : QUANTITIES[id].long
+                  ? `${SELECTIONS[id].short} is already on the other side`
+                  : SELECTIONS[id].long
               }
               className={cn(
                 'rounded-md border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
@@ -68,7 +72,7 @@ export function QuantityPicker({
                   : 'bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
               )}
             >
-              {QUANTITIES[id].short}
+              {SELECTIONS[id].short}
             </button>
           )
         })}

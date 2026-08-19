@@ -1,7 +1,5 @@
 import { fmtNumber } from './format'
 import { QUANTITIES } from './quantities'
-import { normQuantile } from './stats/normQuantile'
-import { phi } from './stats/normal'
 import type { Derivation, Quantity, Values } from './types'
 
 /**
@@ -18,7 +16,7 @@ export const COX_FACTOR = 1.65
  */
 export const HH_FACTOR = 1.81
 
-export type ApproxMethodId = 'cox' | 'hh' | 'probit'
+export type ApproxMethodId = 'cox' | 'hh'
 
 /** What a method hands back when asked to invert an SMD. */
 export interface Seeding {
@@ -44,7 +42,7 @@ export interface ApproxMethod {
   toSmd(values: Values): Derivation
   /** Which quantity the inverse produces — used to explain the working. */
   seeds: Quantity
-  fromSmd(smd: number, values?: Values): Seeding
+  fromSmd(smd: number): Seeding
 }
 
 function missingInputs(values: Values, needs: Quantity[]): Quantity[] {
@@ -126,61 +124,6 @@ export const APPROX_METHODS: ApproxMethod[] = [
     seeds: 'or',
     toSmd: (values) => logisticToSmd(values, HH_FACTOR),
     fromSmd: (smd) => logisticFromSmd(smd, HH_FACTOR),
-  },
-  {
-    id: 'probit',
-    label: 'Probit',
-    needs: ['cer', 'eer'],
-    assumption:
-      'Normal latent variable with equal variances in both arms: each event rate is the tail of the same normal distribution, cut at a different point.',
-    blockedNote:
-      'the probit index depends on the absolute event rates, not just the odds ratio.',
-    citations: ['Sánchez-Meca 2003'],
-    toSmdFormula: 'd = Φ⁻¹(EER) − Φ⁻¹(CER)',
-    fromSmdFormula: 'EER = Φ(Φ⁻¹(CER) + d)',
-    seeds: 'eer',
-    toSmd: (values) => {
-      const missing = missingInputs(values, ['cer', 'eer'])
-      if (missing.length > 0) {
-        return { value: NaN, substituted: '', error: needsError(missing) }
-      }
-      const zControl = normQuantile(values.cer!)
-      const zExperimental = normQuantile(values.eer!)
-      const value = zExperimental - zControl
-      if (!Number.isFinite(value)) {
-        return {
-          value: NaN,
-          substituted: '',
-          error:
-            'Event rates of exactly 0 or 1 have infinite probits, so no finite d exists.',
-        }
-      }
-      return {
-        value,
-        substituted: `d = Φ⁻¹(${fmtNumber(values.eer)}) − Φ⁻¹(${fmtNumber(values.cer)}) = ${fmtNumber(zExperimental)} − (${fmtNumber(zControl)}) = ${fmtNumber(value)}`,
-      }
-    },
-    fromSmd: (smd, values = {}) => {
-      if (!Number.isFinite(smd)) {
-        return { seed: {}, substituted: '', error: 'd must be a finite number.' }
-      }
-      if (values.cer === undefined) {
-        return { seed: {}, substituted: '', error: needsError(['cer']) }
-      }
-      const zControl = normQuantile(values.cer)
-      const eer = phi(zControl + smd)
-      if (!(eer > 0 && eer < 1)) {
-        return {
-          seed: {},
-          substituted: '',
-          error: `CER = ${fmtNumber(values.cer)} shifted by d = ${fmtNumber(smd)} lands on an experimental event rate of ${fmtNumber(eer)}, which is not a rate.`,
-        }
-      }
-      return {
-        seed: { eer },
-        substituted: `EER = Φ(Φ⁻¹(${fmtNumber(values.cer)}) + ${fmtNumber(smd)}) = Φ(${fmtNumber(zControl + smd)}) = ${fmtNumber(eer)}`,
-      }
-    },
   },
 ]
 

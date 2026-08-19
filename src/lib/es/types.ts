@@ -85,20 +85,16 @@ export interface Solution {
 
 /** What the input panel should render for a given picker state. */
 export interface InputRequirement {
-  from: Quantity
-  to: Quantity
+  /** The quantities the reader is converting from, all of which are asked for. */
+  from: Quantity[]
+  /** The quantities being solved for. More than one when both rates are wanted. */
+  to: Quantity[]
   /**
    * Any one of these must also be supplied before a route can resolve.
    * Length 1 means genuinely mandatory; length > 1 means any one suffices;
-   * empty means the single `from` quantity is already enough.
+   * empty means the `from` quantities are already enough.
    */
   requiredAnyOf: Quantity[]
-  /**
-   * Not needed, but each unlocks a route that is otherwise unavailable.
-   * Always empty while `requiredAnyOf` is non-empty, so no quantity is ever
-   * both demanded and offered.
-   */
-  optional: Quantity[]
   /** No single extra input makes this conversion possible. */
   unreachable: boolean
 }

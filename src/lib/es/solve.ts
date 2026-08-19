@@ -18,8 +18,12 @@ import type {
 } from './types'
 import { W } from './warnings'
 
-/** Quantities the reader can type. SMD is included; it is just never derived. */
-const INPUT_QUANTITIES = QUANTITY_ORDER
+/**
+ * Quantities the tool will ever ask a reader to add. EER is never one of
+ * them: either arm's rate answers the same question, and CER is the one a
+ * paper always reports, so demanding EER only makes the form look arbitrary.
+ */
+const AUXILIARY_QUANTITIES = QUANTITY_ORDER.filter((id) => id !== 'eer')
 
 /** The inputs a method needs when running the SMD backwards. */
 function inverseNeeds(method: ApproxMethod): Quantity[] {
@@ -42,7 +46,7 @@ function missingFrom(values: Values, needs: Quantity[]): Quantity[] {
  * the reader had already entered.
  */
 function unblockers(supplied: Quantity[], needs: Quantity[]): Quantity[] {
-  return INPUT_QUANTITIES.filter((candidate) => {
+  return AUXILIARY_QUANTITIES.filter((candidate) => {
     if (candidate === 'smd') return false
     if (supplied.includes(candidate)) return false
     const closure = symbolicClosure([...supplied, candidate])
@@ -168,7 +172,7 @@ function fromSmdRoute(
     }
   }
 
-  const seeding = method.fromSmd(values.smd!, values)
+  const seeding = method.fromSmd(values.smd!)
   if (seeding.error !== undefined) {
     return { ...base, errors: [seeding.error] }
   }
@@ -231,7 +235,7 @@ function unreachableMessage(
   supplied: Quantity[],
   target: Quantity,
 ): string {
-  const candidates = INPUT_QUANTITIES.filter((candidate) => {
+  const candidates = AUXILIARY_QUANTITIES.filter((candidate) => {
     if (candidate === target || supplied.includes(candidate)) return false
     if (candidate === 'smd') {
       // An SMD only helps if a method can seed its way to the target.
@@ -349,51 +353,52 @@ function symbolicRoutes(
   }
 }
 
+/** Every target has at least one route, exact or approximate. */
+function reachesAll(supplied: Quantity[], targets: Quantity[]): boolean {
+  return targets.every((target) => {
+    const routes = symbolicRoutes(supplied, target)
+    return routes.exact || routes.approximate.length > 0
+  })
+}
+
+/** Every target is reachable by algebra alone. */
+function reachesAllExactly(supplied: Quantity[], targets: Quantity[]): boolean {
+  return targets.every((target) => symbolicRoutes(supplied, target).exact)
+}
+
 /**
  * What the input panel should render for one (from → to) pair.
+ *
+ * Both sides are sets because the picker converts to and from event rates as
+ * a pair, and a group is only satisfied when every member of it is reachable.
  *
  * Exact additions win over approximate ones: offering a latent-variable
  * conversion as an equal alternative to algebra would quietly invite the
  * reader to take an assumption they did not need.
  */
 export function requiredInputs(
-  from: Quantity,
-  to: Quantity,
+  from: Quantity[],
+  to: Quantity[],
 ): InputRequirement {
-  const candidates = QUANTITY_ORDER.filter((id) => id !== from && id !== to)
-  const base = symbolicRoutes([from], to)
-
-  if (!base.exact && base.approximate.length === 0) {
-    const exactAdds = candidates.filter(
-      (candidate) => symbolicRoutes([from, candidate], to).exact,
-    )
-    const requiredAnyOf =
-      exactAdds.length > 0
-        ? exactAdds
-        : candidates.filter(
-            (candidate) =>
-              symbolicRoutes([from, candidate], to).approximate.length > 0,
-          )
-    return {
-      from,
-      to,
-      requiredAnyOf: orderQuantities(requiredAnyOf),
-      optional: [],
-      unreachable: requiredAnyOf.length === 0,
-    }
+  if (reachesAll(from, to)) {
+    return { from, to, requiredAnyOf: [], unreachable: false }
   }
 
-  const optional = candidates.filter((candidate) => {
-    const added = symbolicRoutes([from, candidate], to)
-    if (!base.exact && added.exact) return true
-    return added.approximate.some((id) => !base.approximate.includes(id))
-  })
+  const candidates = AUXILIARY_QUANTITIES.filter(
+    (id) => !from.includes(id) && !to.includes(id),
+  )
+  const exactAdds = candidates.filter((candidate) =>
+    reachesAllExactly([...from, candidate], to),
+  )
+  const requiredAnyOf =
+    exactAdds.length > 0
+      ? exactAdds
+      : candidates.filter((candidate) => reachesAll([...from, candidate], to))
 
   return {
     from,
     to,
-    requiredAnyOf: [],
-    optional: orderQuantities(optional),
-    unreachable: false,
+    requiredAnyOf: orderQuantities(requiredAnyOf),
+    unreachable: requiredAnyOf.length === 0,
   }
 }

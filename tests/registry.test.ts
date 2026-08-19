@@ -4,7 +4,7 @@ import { CITATIONS, CITATION_ORDER, splitCitations } from '@/lib/es/citations'
 import { EXACT_RULES, ruleById } from '@/lib/es/exact'
 import { CONVERSION_CATALOG, catalogEntry } from '@/lib/es/registry'
 import { QUANTITIES, QUANTITY_ORDER } from '@/lib/es/quantities'
-import type { Quantity } from '@/lib/es/types'
+import { SELECTION_ORDER, type Selection } from '@/lib/es/selections'
 
 describe('citations', () => {
   it('resolves every key referenced by a method', () => {
@@ -61,9 +61,9 @@ describe('rules and methods', () => {
     for (const id of ids) expect(ruleById(id)?.id).toBe(id)
   })
 
-  it('has seven exact rules and three approximate methods', () => {
+  it('has seven exact rules and two approximate methods', () => {
     expect(EXACT_RULES).toHaveLength(7)
-    expect(APPROX_METHODS).toHaveLength(3)
+    expect(APPROX_METHODS).toHaveLength(2)
   })
 
   it('never lets an exact rule produce SMD', () => {
@@ -117,8 +117,8 @@ describe('conversion catalogue', () => {
   })
 
   it('contains the five presets the WordPress post links to', () => {
-    const presets: [Quantity, Quantity][] = [
-      ['cer', 'eer'],
+    const presets: [Selection, Selection][] = [
+      ['or', 'rates'],
       ['or', 'rr'],
       ['rr', 'or'],
       ['or', 'smd'],
@@ -129,9 +129,9 @@ describe('conversion catalogue', () => {
     }
   })
 
-  it('covers every ordered pair of distinct quantities', () => {
+  it('covers every ordered pair of distinct selections', () => {
     expect(CONVERSION_CATALOG).toHaveLength(
-      QUANTITY_ORDER.length * (QUANTITY_ORDER.length - 1),
+      SELECTION_ORDER.length * (SELECTION_ORDER.length - 1),
     )
   })
 
@@ -141,11 +141,9 @@ describe('conversion catalogue', () => {
     }
   })
 
-  it('never demands and offers the same quantity', () => {
+  it('never demands EER', () => {
     for (const entry of CONVERSION_CATALOG) {
-      for (const id of entry.requiredAnyOf) {
-        expect(entry.optional).not.toContain(id)
-      }
+      expect(entry.requiredAnyOf).not.toContain('eer')
     }
   })
 
@@ -154,30 +152,22 @@ describe('conversion catalogue', () => {
       (entry) =>
         `${entry.from} → ${entry.to} [${entry.kind}] ${entry.routes
           .map((route) => route.id)
-          .join('/')} +${entry.requiredAnyOf.join('|') || '—'} ?${entry.optional.join('|') || '—'}`,
+          .join('/')} +${entry.requiredAnyOf.join('|') || '—'}`,
     )
     expect(summary).toMatchInlineSnapshot(`
       [
-        "cer → eer [exact] exact +rr|or ?—",
-        "cer → rr [exact] exact +eer|or ?—",
-        "cer → or [exact] exact +eer|rr ?—",
-        "cer → smd [approximate] cox/hh/probit +eer|rr|or ?—",
-        "eer → cer [exact] exact +rr|or ?—",
-        "eer → rr [exact] exact +cer|or ?—",
-        "eer → or [exact] exact +cer|rr ?—",
-        "eer → smd [approximate] cox/hh/probit +cer|rr|or ?—",
-        "rr → cer [exact] exact +eer|or ?—",
-        "rr → eer [exact] exact +cer|or ?—",
-        "rr → or [exact] exact +cer|eer ?—",
-        "rr → smd [approximate] cox/hh/probit +cer|eer|or ?—",
-        "or → cer [exact] exact +eer|rr ?—",
-        "or → eer [exact] exact +cer|rr ?—",
-        "or → rr [exact] exact +cer|eer ?—",
-        "or → smd [approximate] cox/hh +— ?cer|eer|rr",
-        "smd → cer [approximate] cox/hh +eer|rr ?—",
-        "smd → eer [approximate] cox/hh/probit +cer|rr ?—",
-        "smd → rr [approximate] cox/hh/probit +cer|eer ?—",
-        "smd → or [approximate] cox/hh +— ?cer",
+        "rates → rr [exact] exact +—",
+        "rates → or [exact] exact +—",
+        "rates → smd [approximate] cox/hh +—",
+        "rr → rates [exact] exact +or",
+        "rr → or [exact] exact +cer",
+        "rr → smd [approximate] cox/hh +cer|or",
+        "or → rates [exact] exact +rr",
+        "or → rr [exact] exact +cer",
+        "or → smd [approximate] cox/hh +—",
+        "smd → rates [approximate] cox/hh +rr",
+        "smd → rr [approximate] cox/hh +cer",
+        "smd → or [approximate] cox/hh +—",
       ]
     `)
   })

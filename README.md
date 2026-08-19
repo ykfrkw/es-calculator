@@ -39,15 +39,12 @@ Rules 4 and 5 reject an implied event rate of 1 or more, and report the largest 
 | :- | :- | :- | :- | :- | :- |
 | 8 | `cox` | OR | `d = ln(OR) / 1.65` | `OR = exp(1.65 × d)` | Logistic latent variable |
 | 9 | `hh` | OR | `d = ln(OR) / 1.81` | `OR = exp(1.81 × d)` | Logistic latent variable; 1.81 ≈ π/√3, the SD of the standard logistic |
-| 10 | `probit` | CER **and** EER | `d = Φ⁻¹(EER) − Φ⁻¹(CER)` | `EER = Φ(Φ⁻¹(CER) + d)` | Normal latent variable, equal variances in both arms |
 
 `1.65` and `1.81` are literal constants, not `Math.PI / Math.sqrt(3)` rounded. Chinn's published method is stated with 1.81, and meta-analyses report values computed with 1.81; substituting the exact logistic SD (1.8138) shifts every converted effect size by about 0.2 %. Both constants are locked by tests.
 
-The probit index depends on the absolute event rates, not just the odds ratio, so an odds ratio on its own leaves it blocked. The tool shows it greyed out and names the input that would unblock it rather than hiding the method.
+Both methods are a function of the odds ratio alone, so a set of inputs that does not determine an odds ratio leaves them blocked. The tool shows the route greyed out and names the input that would unblock it rather than hiding the method.
 
-Running an SMD backwards, the probit seeds **EER** (not OR); feeding that back through the exact rules recovers OR and RR for free.
-
-`Φ` uses Hart's rational approximation in West's (2005) arrangement, and `Φ⁻¹` is Beasley–Springer–Moro refined by one Halley step against it. Both are accurate to ~1e-15, so the probit round trip closes to 1e-12 rather than to the 1e-9 the bare rational would give.
+Running an SMD backwards, both methods seed **OR**; feeding that back through the exact rules recovers the rates and the risk ratio for free.
 
 ## What it does not do
 
@@ -61,19 +58,21 @@ An event that is more likely in the experimental arm gives a positive *d*. If th
 
 ## Using it
 
-Pick **one** quantity to convert from and **one** to convert to. Anything else the conversion needs is then prompted for as a field rather than expressed in the picker.
+Pick **one** measure to convert from and **one** to convert to: **Event rates**, **RR**, **OR** or **SMD**. Event rates is a single choice covering CER and EER, because either arm's rate answers the same question and separating them offered combinations that never arise. Anything else the conversion needs is then prompted for as a field rather than expressed in the picker.
 
-Because any two of CER, EER, RR and OR determine all four, a binary-to-binary conversion asks for one more binary — `OR → RR` shows an **"Also needed — fill in any one of these"** block offering CER and EER, and filling either one is enough. Conversions to or from an SMD ask for whatever the chosen route needs, and `OR → SMD` and `SMD → OR` need nothing extra at all: there the event rates sit in a separate dashed **"Optional — adds the probit method"** block. A quantity never appears in both blocks.
+Because any two of CER, EER, RR and OR determine all four, a conversion between two ratios asks for one binary more — `OR → RR` shows an **"Also needed"** block asking for CER, and filling it is enough. The tool never asks for EER: CER is the rate a paper always reports, so demanding the experimental arm's rate would only make the form look arbitrary.
 
 Until the requirement is met the result area names what is missing instead of showing a number.
 
+Results are shown to two decimal places, lines of working included, so a value never appears with two different roundings on the same screen. A number that two decimals would flatten to `0.00` is shown to two significant figures instead, and anything outside `[0.001, 1000)` switches to exponential notation.
+
 ## Deep links
 
-The picker state lives in the query string: `?from=or&to=rr`, with optional numeric prefills (`&or=2.15&cer=0.2`) that satisfy the "Also needed" block on load. The five presets the blog post links to are:
+The picker state lives in the query string: `?from=or&to=rr`, with optional numeric prefills (`&or=2.15&cer=0.2`) that satisfy the "Also needed" block on load. The tokens are `rates`, `rr`, `or` and `smd`. The five presets the blog post links to are:
 
-`?from=cer&to=eer` · `?from=or&to=rr` · `?from=rr&to=or` · `?from=or&to=smd` · `?from=smd&to=or`
+`?from=or&to=rates` · `?from=or&to=rr` · `?from=rr&to=or` · `?from=or&to=smd` · `?from=smd&to=or`
 
-`from` was a comma-separated list in an earlier revision. Those links still work: the first valid id wins and the rest are dropped silently. Unknown ids are dropped and a self-contradictory link falls back to the default state — a stale link never renders an error. The tool writes the URL back with `history.replaceState` only, so an embedded copy cannot hijack the reader's Back button.
+Links minted against earlier revisions still work. `from` was a comma-separated list: the first valid id wins and the rest are dropped silently. `cer` and `eer` were separate sides of the picker: either now maps onto `rates`, and `?from=cer&to=eer` — whose two sides collapse onto the same selection — lands on `OR → Event rates` with its prefills intact. Unknown ids are dropped and a self-contradictory link falls back to the default state, so a stale link never renders an error. The tool writes the URL back with `history.replaceState` only, so an embedded copy cannot hijack the reader's Back button.
 
 ## References
 
@@ -81,7 +80,6 @@ The picker state lives in the query string: `?from=or&to=rr`, with optional nume
 - Hasselblad V, Hedges LV. Meta-analysis of screening and diagnostic tests. *Psychol Bull.* 1995;117(1):167–178. doi:10.1037/0033-2909.117.1.167. PMID: [7870860](https://pubmed.ncbi.nlm.nih.gov/7870860/). The logistic-scale conversion, popularised for meta-analysis by Chinn 2000.
 - Chinn S. A simple method for converting an odds ratio to effect size for use in meta-analysis. *Stat Med.* 2000;19(22):3127–3131. doi:10.1002/1097-0258(20001130)19:22\<3127::aid-sim784\>3.0.co;2-m. PMID: [11113947](https://pubmed.ncbi.nlm.nih.gov/11113947/).
 - Sánchez-Meca J, Marín-Martínez F, Chacón-Moscoso S. Effect-size indices for dichotomized outcomes in meta-analysis. *Psychol Methods.* 2003;8(4):448–467. doi:10.1037/1082-989X.8.4.448. PMID: [14664682](https://pubmed.ncbi.nlm.nih.gov/14664682/). A study comparing seven effect-size indices for dichotomised outcomes.
-- West G. Better approximations to cumulative normal functions. *Wilmott Magazine.* 2005;May:70–76. Source of the Φ implementation.
 
 ## Disclaimer
 

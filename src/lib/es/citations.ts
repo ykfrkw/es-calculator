@@ -41,7 +41,7 @@ export const CITATIONS: Record<string, Citation> = {
   'Sánchez-Meca 2003': {
     key: 'Sánchez-Meca 2003',
     text: 'Sánchez-Meca J, Marín-Martínez F, Chacón-Moscoso S. Effect-size indices for dichotomized outcomes in meta-analysis. Psychol Methods. 2003;8(4):448–467.',
-    note: 'A study comparing seven effect-size indices for dichotomised outcomes, including the probit and logistic conversions used here.',
+    note: 'A study comparing seven effect-size indices for dichotomised outcomes, including the logistic conversions used here.',
     doi: '10.1037/1082-989X.8.4.448',
     pmid: '14664682',
     url: 'https://pubmed.ncbi.nlm.nih.gov/14664682/',

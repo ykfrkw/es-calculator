@@ -1,6 +1,6 @@
-import { QUANTITY_ORDER } from './quantities'
+import { SELECTION_ORDER, membersOf, type Selection } from './selections'
 import { requiredInputs, solve } from './solve'
-import type { Kind, Quantity, Values } from './types'
+import type { Kind, Quantity, Route, Values } from './types'
 
 /**
  * Consistent probe values: CER 0.20 / EER 0.35 and the RR and OR they imply.
@@ -22,14 +22,12 @@ export interface CatalogRoute {
 }
 
 export interface CatalogEntry {
-  from: Quantity
-  to: Quantity
+  from: Selection
+  to: Selection
   /** 'exact' when the conversion needs no latent-variable assumption. */
   kind: Kind
   /** Any one of these must also be supplied. Empty when `from` suffices. */
   requiredAnyOf: Quantity[]
-  /** Not needed, but each unlocks a further route. */
-  optional: Quantity[]
   /** Routes that resolve once the requirement is met, in display order. */
   routes: CatalogRoute[]
   /** Rule and method ids used, for cross-checking against the engine. */
@@ -43,6 +41,24 @@ function probe(ids: Quantity[]): Values {
 }
 
 /**
+ * The routes that resolve for a selection, across all of its targets.
+ *
+ * Converting to event rates runs the solver twice, once per rate, and both
+ * runs offer the same methods — so the routes are keyed by id rather than
+ * listed once per target.
+ */
+function resolvedRoutes(known: Values, targets: Quantity[]): Route[] {
+  const byId = new Map<string, Route>()
+  for (const target of targets) {
+    for (const route of solve(known, target).routes) {
+      if (!Number.isFinite(route.value)) continue
+      if (!byId.has(route.id)) byId.set(route.id, route)
+    }
+  }
+  return [...byId.values()]
+}
+
+/**
  * Built by driving the solver rather than written by hand: a table typed out
  * separately would be a second source of truth, and would go stale the first
  * time a rule changed.
@@ -50,22 +66,20 @@ function probe(ids: Quantity[]): Values {
 function buildCatalog(): CatalogEntry[] {
   const entries: CatalogEntry[] = []
 
-  for (const from of QUANTITY_ORDER) {
-    for (const to of QUANTITY_ORDER) {
+  for (const from of SELECTION_ORDER) {
+    for (const to of SELECTION_ORDER) {
       if (from === to) continue
 
-      const requirement = requiredInputs(from, to)
+      const targets = membersOf(to)
+      const requirement = requiredInputs(membersOf(from), targets)
       // Probe with the cheapest satisfying input so the routes the reader
       // will actually see are the ones recorded.
-      const supplied: Quantity[] = [from]
+      const supplied: Quantity[] = [...membersOf(from)]
       if (requirement.requiredAnyOf.length > 0) {
         supplied.push(requirement.requiredAnyOf[0])
       }
 
-      const solution = solve(probe(supplied), to)
-      const live = solution.routes.filter((route) =>
-        Number.isFinite(route.value),
-      )
+      const live = resolvedRoutes(probe(supplied), targets)
       if (live.length === 0) continue
 
       entries.push({
@@ -75,7 +89,6 @@ function buildCatalog(): CatalogEntry[] {
           ? 'exact'
           : 'approximate',
         requiredAnyOf: requirement.requiredAnyOf,
-        optional: requirement.optional,
         routes: live.map((route) => ({
           id: route.id,
           label: route.label,
@@ -95,8 +108,8 @@ export const CONVERSION_CATALOG: CatalogEntry[] = buildCatalog()
 
 /** Catalogue lookup for a given picker state. */
 export function catalogEntry(
-  from: Quantity,
-  to: Quantity,
+  from: Selection,
+  to: Selection,
 ): CatalogEntry | undefined {
   return CONVERSION_CATALOG.find(
     (entry) => entry.from === from && entry.to === to,
