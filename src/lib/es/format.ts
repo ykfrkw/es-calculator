@@ -4,8 +4,15 @@
  * appears with two different roundings on the same screen.
  */
 
-/** Significant digits shown by default. */
-const DEFAULT_SIGNIFICANT = 5
+/** Decimal places shown by default. */
+const DEFAULT_DECIMALS = 2
+
+/**
+ * Significant digits used when the requested decimals would print nothing but
+ * zeros. A converted rate of 0.0032 is a real answer, and "0.00" would read
+ * as a failure rather than as a small number.
+ */
+const SMALL_SIGNIFICANT = 2
 
 /** Outside this band fixed notation stops being readable. */
 const EXPONENTIAL_ABOVE = 1000
@@ -15,7 +22,7 @@ const EXPONENTIAL_BELOW = 0.001
 export const EMPTY_MARK = '—'
 
 export interface FormatOptions {
-  significant?: number
+  decimals?: number
   /** String to print for undefined / NaN / non-finite input. */
   empty?: string
 }
@@ -24,7 +31,7 @@ export function fmtNumber(
   value: number | undefined,
   options: FormatOptions = {},
 ): string {
-  const { significant = DEFAULT_SIGNIFICANT, empty = EMPTY_MARK } = options
+  const { decimals = DEFAULT_DECIMALS, empty = EMPTY_MARK } = options
   if (value === undefined || !Number.isFinite(value)) return empty
 
   const magnitude = Math.abs(value)
@@ -32,7 +39,12 @@ export function fmtNumber(
   if (magnitude >= EXPONENTIAL_ABOVE || magnitude < EXPONENTIAL_BELOW) {
     return value.toExponential(3)
   }
-  return trimTrailingZeros(value.toPrecision(significant))
+
+  const fixed = value.toFixed(decimals)
+  if (Number(fixed) === 0) {
+    return trimTrailingZeros(value.toPrecision(SMALL_SIGNIFICANT))
+  }
+  return trimTrailingZeros(fixed)
 }
 
 /** Signed form, used where the sign carries meaning (SMD). */
@@ -53,12 +65,12 @@ export function fmtPercent(
   if (value === undefined || !Number.isFinite(value)) {
     return options.empty ?? EMPTY_MARK
   }
-  return `${fmtNumber(value * 100, { significant: 4, ...options })}%`
+  return `${fmtNumber(value * 100, options)}%`
 }
 
 /**
- * Strip the padding zeros toPrecision adds, but only when there is a decimal
- * point — "17500" must not become "175".
+ * Strip the padding zeros toFixed and toPrecision add, but only when there is
+ * a decimal point — "17500" must not become "175".
  */
 function trimTrailingZeros(text: string): string {
   if (!text.includes('.')) return text

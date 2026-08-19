@@ -1,5 +1,6 @@
 import { NumberField } from '@/components/NumberField'
 import { QUANTITIES, listQuantities } from '@/lib/es/quantities'
+import { SELECTIONS, selectionOf } from '@/lib/es/selections'
 import type { ValueDraft } from '@/lib/es/deeplink'
 import type { InputRequirement, Quantity, RateUnit } from '@/lib/es/types'
 import { cn } from '@/lib/utils'
@@ -74,13 +75,17 @@ export function InputPanel({
   satisfied,
   onChange,
 }: InputPanelProps) {
-  const { from, requiredAnyOf, optional } = requirement
+  const { from, to, requiredAnyOf } = requirement
   const anyOne = requiredAnyOf.length > 1
+  // Every member of a group belongs to the same selection, so either end can
+  // be named by the label the picker used rather than by a list of fields.
+  const fromLabel = SELECTIONS[selectionOf(from[0])].short
+  const toLabel = SELECTIONS[selectionOf(to[0])].short
 
   return (
     <div className="space-y-4">
       <FieldGrid
-        ids={[from]}
+        ids={from}
         prefix="from"
         values={values}
         rateUnit={rateUnit}
@@ -103,31 +108,12 @@ export function InputPanel({
           </p>
           <p className="text-xs text-[hsl(var(--muted-foreground))]">
             {anyOne
-              ? `${QUANTITIES[from].short} on its own does not fix ${QUANTITIES[requirement.to].short}. Any one of ${listQuantities(requiredAnyOf)} completes it — the others are then worked out for you.`
-              : `${QUANTITIES[from].short} on its own does not fix ${QUANTITIES[requirement.to].short}. ${QUANTITIES[requiredAnyOf[0]].short} is the missing piece.`}
+              ? `${fromLabel} on its own does not fix ${toLabel}. Any one of ${listQuantities(requiredAnyOf)} completes it — the others are then worked out for you.`
+              : `${fromLabel} on its own does not fix ${toLabel}. ${QUANTITIES[requiredAnyOf[0]].short} is the missing piece.`}
           </p>
           <FieldGrid
             ids={requiredAnyOf}
             prefix="required"
-            values={values}
-            rateUnit={rateUnit}
-            onChange={onChange}
-          />
-        </div>
-      )}
-
-      {optional.length > 0 && (
-        <div className="space-y-3 rounded-md border border-dashed p-3">
-          <p className="text-xs font-medium">
-            Optional — adds the probit method
-          </p>
-          <p className="text-xs text-[hsl(var(--muted-foreground))]">
-            The probit index needs the absolute event rates. Fill in any one of
-            these and it will resolve alongside the logistic conversions.
-          </p>
-          <FieldGrid
-            ids={optional}
-            prefix="optional"
             values={values}
             rateUnit={rateUnit}
             onChange={onChange}

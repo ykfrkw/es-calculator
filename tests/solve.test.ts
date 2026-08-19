@@ -6,44 +6,22 @@ import type { Values } from '@/lib/es/types'
 describe('OR → SMD', () => {
   const solution = solve({ or: 2 }, 'smd')
 
-  it('always offers all three methods', () => {
-    expect(solution.routes.map((route) => route.id)).toEqual([
-      'cox',
-      'hh',
-      'probit',
-    ])
+  it('always offers both methods', () => {
+    expect(solution.routes.map((route) => route.id)).toEqual(['cox', 'hh'])
   })
 
-  it('resolves the two logistic routes', () => {
-    for (const id of ['cox', 'hh']) {
-      const route = solution.routes.find((candidate) => candidate.id === id)!
+  it('resolves both logistic routes', () => {
+    for (const route of solution.routes) {
       expect(Number.isFinite(route.value)).toBe(true)
     }
-  })
-
-  it('shows the probit as blocked rather than hiding it', () => {
-    const probit = solution.routes.find((route) => route.id === 'probit')!
-    expect(Number.isNaN(probit.value)).toBe(true)
-    expect(probit.missing).toEqual(['cer'])
-    expect(probit.alternatives).toEqual(['eer', 'rr'])
-    expect(probit.blockedReason).toBe(
-      'Needs CER, EER or RR as well — the probit index depends on the absolute event rates, not just the odds ratio.',
-    )
-  })
-
-  it('lights the probit up once a rate is supplied', () => {
-    const withRate = solve({ or: 2, cer: 0.2 }, 'smd')
-    const probit = withRate.routes.find((route) => route.id === 'probit')!
-    expect(Number.isFinite(probit.value)).toBe(true)
-    expect(probit.missing).toEqual([])
   })
 })
 
 describe('rates → SMD', () => {
   const solution = solve({ cer: 0.2, eer: 0.35 }, 'smd')
 
-  it('resolves all three methods', () => {
-    expect(solution.routes).toHaveLength(3)
+  it('resolves both methods', () => {
+    expect(solution.routes).toHaveLength(2)
     expect(
       solution.routes.every((route) => Number.isFinite(route.value)),
     ).toBe(true)
@@ -69,8 +47,8 @@ describe('rates → SMD', () => {
 describe('SMD → EER with a known CER', () => {
   const solution = solve({ smd: 0.5, cer: 0.2 }, 'eer')
 
-  it('offers three approximate routes', () => {
-    expect(solution.routes).toHaveLength(3)
+  it('offers two approximate routes', () => {
+    expect(solution.routes).toHaveLength(2)
     for (const route of solution.routes) {
       expect(route.kind).toBe('approximate')
       expect(Number.isFinite(route.value)).toBe(true)
@@ -86,12 +64,10 @@ describe('SMD → EER with a known CER', () => {
     }
   })
 
-  it('takes the logistic routes through OR and the probit straight to EER', () => {
-    const cox = solution.routes.find((route) => route.id === 'cox')!
-    expect(cox.steps.map((step) => step.produces)).toEqual(['or', 'eer'])
-
-    const probit = solution.routes.find((route) => route.id === 'probit')!
-    expect(probit.steps.map((step) => step.produces)).toEqual(['eer'])
+  it('takes both logistic routes through OR', () => {
+    for (const route of solution.routes) {
+      expect(route.steps.map((step) => step.produces)).toEqual(['or', 'eer'])
+    }
   })
 
   it('agrees with the direct method calls', () => {
@@ -125,14 +101,23 @@ describe('unreachable targets', () => {
     expect(solution.routes).toEqual([])
     expect(solution.resolved).toBe(false)
     expect(solution.message).toBe(
-      'RR alone does not determine OR. Add CER, EER or SMD.',
+      'RR alone does not determine OR. Add CER or SMD.',
     )
+  })
+
+  // EER may name the target that could not be reached; what it must never do
+  // is appear in the list of inputs the reader is told to go and find.
+  it('never suggests adding EER', () => {
+    for (const target of QUANTITY_ORDER) {
+      const message = solve({ rr: 1.5 }, target).message ?? ''
+      expect(message.split('Add ')[1] ?? '').not.toContain('EER')
+    }
   })
 
   it('handles the empty input', () => {
     const solution = solve({}, 'smd')
     expect(solution.resolved).toBe(false)
-    expect(solution.routes).toHaveLength(3)
+    expect(solution.routes).toHaveLength(2)
     expect(solution.routes.every((route) => route.missing.length > 0)).toBe(true)
   })
 })
@@ -190,39 +175,34 @@ describe('requiredInputs', () => {
   // The exhaustive (from, to) sweep lives in tests/requirements.test.ts;
   // these pin the shapes the input panel branches on.
   it('demands the single missing piece for an exact conversion', () => {
-    expect(requiredInputs('cer', 'eer')).toEqual({
-      from: 'cer',
-      to: 'eer',
-      requiredAnyOf: ['rr', 'or'],
-      optional: [],
+    expect(requiredInputs(['rr'], ['or'])).toEqual({
+      from: ['rr'],
+      to: ['or'],
+      requiredAnyOf: ['cer'],
       unreachable: false,
     })
   })
 
-  it('offers the rates that would add the probit method', () => {
-    expect(requiredInputs('or', 'smd')).toEqual({
-      from: 'or',
-      to: 'smd',
+  it('demands nothing when the pair of rates already closes the algebra', () => {
+    expect(requiredInputs(['cer', 'eer'], ['or'])).toEqual({
+      from: ['cer', 'eer'],
+      to: ['or'],
       requiredAnyOf: [],
-      optional: ['cer', 'eer', 'rr'],
       unreachable: false,
     })
   })
 
-  // Only CER: a lone EER or RR still leaves the probit without a second
-  // rate, because two of the four exact quantities are needed to close.
-  it('offers CER when inverting an SMD', () => {
-    expect(requiredInputs('smd', 'or')).toEqual({
-      from: 'smd',
-      to: 'or',
-      requiredAnyOf: [],
-      optional: ['cer'],
+  it('demands the ratio that lets a seeded SMD reach both rates', () => {
+    expect(requiredInputs(['smd'], ['cer', 'eer'])).toEqual({
+      from: ['smd'],
+      to: ['cer', 'eer'],
+      requiredAnyOf: ['rr'],
       unreachable: false,
     })
   })
 
   it('never asks for the target or the source', () => {
-    const requirement = requiredInputs('or', 'rr')
+    const requirement = requiredInputs(['or'], ['rr'])
     expect(requirement.requiredAnyOf).not.toContain('or')
     expect(requirement.requiredAnyOf).not.toContain('rr')
   })

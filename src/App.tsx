@@ -1,18 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
 import { SegmentedControl } from '@/components/SegmentedControl'
 import { ConversionCatalog } from '@/components/ConversionCatalog'
+import { ConversionPicker } from '@/components/ConversionPicker'
 import { DerivedStrip } from '@/components/DerivedStrip'
 import { InputPanel } from '@/components/InputPanel'
-import { QuantityPicker } from '@/components/QuantityPicker'
 import { ReferenceList } from '@/components/ReferenceList'
 import { RouteList } from '@/components/RouteList'
 import { parseNumeric } from '@/lib/parse'
@@ -22,8 +16,14 @@ import {
   parseDeeplink,
   type DeeplinkState,
 } from '@/lib/es/deeplink'
-import { QUANTITIES, QUANTITY_ORDER, listQuantities } from '@/lib/es/quantities'
+import { QUANTITIES, listQuantities } from '@/lib/es/quantities'
 import { catalogEntry } from '@/lib/es/registry'
+import {
+  SELECTIONS,
+  SELECTION_ORDER,
+  membersOf,
+  type Selection,
+} from '@/lib/es/selections'
 import { requiredInputs, solve } from '@/lib/es/solve'
 import { W } from '@/lib/es/warnings'
 import type {
@@ -44,11 +44,7 @@ function toProportion(value: number, id: Quantity, rateUnit: RateUnit): number {
 
 /** The fields the form is currently showing, in the order it shows them. */
 function activeFields(requirement: InputRequirement): Quantity[] {
-  return [
-    requirement.from,
-    ...requirement.requiredAnyOf,
-    ...requirement.optional,
-  ]
+  return [...requirement.from, ...requirement.requiredAnyOf]
 }
 
 function numericValues(
@@ -68,18 +64,20 @@ function numericValues(
 /** What the result area says while the conversion cannot yet be attempted. */
 function pendingNote(
   requirement: InputRequirement,
+  target: Quantity,
   hasAnyInput: boolean,
 ): string {
-  const target = QUANTITIES[requirement.to].short
+  const targetLabel = QUANTITIES[target].short
   if (!hasAnyInput) {
-    return `Enter ${QUANTITIES[requirement.from].short} above to compute ${target}.`
+    return `Enter ${listQuantities(requirement.from, 'and')} above to compute ${targetLabel}.`
   }
   if (requirement.requiredAnyOf.length === 0) {
-    return `Check the values above — ${target} could not be computed from them.`
+    return `Check the values above — ${targetLabel} could not be computed from them.`
   }
+  const fromLabel = listQuantities(requirement.from, 'and')
   return requirement.requiredAnyOf.length === 1
-    ? `Needs ${QUANTITIES[requirement.requiredAnyOf[0]].short} as well — ${QUANTITIES[requirement.from].short} on its own does not fix ${target}.`
-    : `Needs ${listQuantities(requirement.requiredAnyOf)} as well — any one of them is enough to fix ${target}.`
+    ? `Needs ${QUANTITIES[requirement.requiredAnyOf[0]].short} as well — ${fromLabel} on its own does not fix ${targetLabel}.`
+    : `Needs ${listQuantities(requirement.requiredAnyOf)} as well — any one of them is enough to fix ${targetLabel}.`
 }
 
 function App() {
@@ -105,9 +103,11 @@ function App() {
     return () => clearTimeout(timer)
   }, [state])
 
+  const targets = useMemo(() => membersOf(state.to), [state.to])
+
   const requirement = useMemo(
-    () => requiredInputs(state.from, state.to),
-    [state.from, state.to],
+    () => requiredInputs(membersOf(state.from), targets),
+    [state.from, targets],
   )
 
   const known = useMemo(
@@ -115,28 +115,31 @@ function App() {
     [state, requirement, rateUnit],
   )
 
-  const solution = useMemo(() => solve(known, state.to), [known, state.to])
+  const solutions = useMemo(
+    () => targets.map((target) => solve(known, target)),
+    [known, targets],
+  )
 
-  // Picking a quantity that is already on the other side would leave the
-  // pair invalid, so the other side steps aside to the next free option.
-  const setFrom = (from: Quantity): void => {
+  // Picking a side that is already on the other row would leave the pair
+  // invalid, so the other side steps aside to the next free option.
+  const setFrom = (from: Selection): void => {
     setState((current) => ({
       ...current,
       from,
       to:
         current.to === from
-          ? QUANTITY_ORDER.find((candidate) => candidate !== from)!
+          ? SELECTION_ORDER.find((candidate) => candidate !== from)!
           : current.to,
     }))
   }
 
-  const setTo = (to: Quantity): void => {
+  const setTo = (to: Selection): void => {
     setState((current) => ({
       ...current,
       to,
       from:
         current.from === to
-          ? QUANTITY_ORDER.find((candidate) => candidate !== to)!
+          ? SELECTION_ORDER.find((candidate) => candidate !== to)!
           : current.from,
     }))
   }
@@ -147,7 +150,7 @@ function App() {
       values: { ...current.values, [id]: value },
     }))
 
-  const recipe = `${QUANTITIES[state.from].short} → ${QUANTITIES[state.to].short}`
+  const recipe = `${SELECTIONS[state.from].short} → ${SELECTIONS[state.to].short}`
   // The badge describes the conversion itself, not whether the reader has
   // finished typing — an unfilled form does not make exact algebra unavailable.
   const conversionKind = catalogEntry(state.from, state.to)?.kind
@@ -155,30 +158,27 @@ function App() {
     requirement.requiredAnyOf.length === 0 ||
     requirement.requiredAnyOf.some((id) => known[id] !== undefined)
   const hasAnyInput = Object.keys(known).length > 0
+  // Input errors depend on the values alone, so every target reports the same
+  // list; printing one per target would show the reader each error twice.
+  const inputErrors = solutions[0].errors
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 text-[hsl(var(--foreground))]">
       <Card>
         <CardHeader>
           <CardTitle>Effect Size Converter</CardTitle>
-          <CardDescription>
-            Convert between control and experimental event rates, the risk
-            ratio, the odds ratio and the standardised mean difference. Rate and
-            ratio conversions are exact algebra; anything crossing to or from an
-            SMD rests on a latent-variable assumption, stated on each card.
-          </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
-            <QuantityPicker
+            <ConversionPicker
               label="Convert from"
               value={state.from}
               disabled={state.to}
               onChange={setFrom}
-              caption="One quantity in. Anything else the conversion needs is asked for below."
+              caption="One measure in. Anything else the conversion needs is asked for below."
             />
-            <QuantityPicker
+            <ConversionPicker
               label="Convert to"
               value={state.to}
               disabled={state.from}
@@ -228,11 +228,11 @@ function App() {
             onChange={setValue}
           />
 
-          {solution.errors.length > 0 && (
+          {inputErrors.length > 0 && (
             <Alert variant="destructive">
               <AlertDescription>
                 <ul className="list-disc space-y-1 pl-4">
-                  {solution.errors.map((error, index) => (
+                  {inputErrors.map((error, index) => (
                     <li key={index}>{error.message}</li>
                   ))}
                 </ul>
@@ -240,15 +240,18 @@ function App() {
             </Alert>
           )}
 
-          <RouteList
-            solution={solution}
-            pendingNote={pendingNote(requirement, hasAnyInput)}
-          />
+          {solutions.map((solution) => (
+            <RouteList
+              key={solution.target}
+              solution={solution}
+              pendingNote={pendingNote(requirement, solution.target, hasAnyInput)}
+            />
+          ))}
 
           <DerivedStrip
-            derived={solution.derived}
-            target={solution.target}
-            supplied={solution.from}
+            derived={solutions[0].derived}
+            targets={targets}
+            supplied={solutions[0].from}
           />
 
           <Separator />

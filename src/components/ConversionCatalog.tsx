@@ -1,11 +1,19 @@
 import { QUANTITIES, listQuantities } from '@/lib/es/quantities'
 import { CONVERSION_CATALOG } from '@/lib/es/registry'
+import { SELECTIONS } from '@/lib/es/selections'
+import type { Quantity } from '@/lib/es/types'
 
 const METHOD_LABELS: Record<string, string> = {
   exact: 'algebra',
   cox: 'Cox',
   hh: 'Hasselblad–Hedges',
-  probit: 'probit',
+}
+
+/** "any one of" only earns its place when there is in fact a choice. */
+function requiredLabel(ids: Quantity[]): string {
+  if (ids.length === 0) return '—'
+  if (ids.length === 1) return QUANTITIES[ids[0]].short
+  return `any one of ${listQuantities(ids)}`
 }
 
 /** Every conversion the engine can actually perform, read off the engine. */
@@ -26,17 +34,13 @@ export function ConversionCatalog() {
           {CONVERSION_CATALOG.map((entry) => (
             <tr key={`${entry.from}-${entry.to}`} className="border-b">
               <td className="whitespace-nowrap py-1.5 pr-3 font-mono">
-                {QUANTITIES[entry.from].short}
+                {SELECTIONS[entry.from].short}
               </td>
               <td className="whitespace-nowrap py-1.5 pr-3 font-mono">
-                {QUANTITIES[entry.to].short}
+                {SELECTIONS[entry.to].short}
               </td>
               <td className="py-1.5 pr-3">
-                {entry.requiredAnyOf.length > 0
-                  ? `any one of ${listQuantities(entry.requiredAnyOf)}`
-                  : entry.optional.length > 0
-                    ? `— (${listQuantities(entry.optional)} optional)`
-                    : '—'}
+                {requiredLabel(entry.requiredAnyOf)}
               </td>
               <td className="py-1.5 pr-3">
                 {entry.kind === 'exact' ? 'Exact' : 'Approximate'}

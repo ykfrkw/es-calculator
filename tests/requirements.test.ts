@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { QUANTITY_ORDER } from '@/lib/es/quantities'
+import { SELECTION_ORDER, membersOf, type Selection } from '@/lib/es/selections'
 import { requiredInputs, solve } from '@/lib/es/solve'
 import type { Quantity, Values } from '@/lib/es/types'
 
@@ -18,167 +18,149 @@ function bag(ids: Quantity[]): Values {
   return values
 }
 
-/** Every ordered (from, to) pair over the five quantities. */
-const PAIRS: [Quantity, Quantity][] = QUANTITY_ORDER.flatMap((from) =>
-  QUANTITY_ORDER.filter((to) => to !== from).map(
-    (to) => [from, to] as [Quantity, Quantity],
+/** Every ordered (from, to) pair the picker can express. */
+const PAIRS: [Selection, Selection][] = SELECTION_ORDER.flatMap((from) =>
+  SELECTION_ORDER.filter((to) => to !== from).map(
+    (to) => [from, to] as [Selection, Selection],
   ),
 )
 
+/** True when every quantity the selection stands for actually resolved. */
+function resolvesAll(supplied: Quantity[], to: Selection): boolean {
+  return membersOf(to).every((target) => solve(bag(supplied), target).resolved)
+}
+
 describe('requiredInputs over every ordered pair', () => {
   it.each(PAIRS)('%s → %s is reachable', (from, to) => {
-    expect(requiredInputs(from, to).unreachable).toBe(false)
+    expect(requiredInputs(membersOf(from), membersOf(to)).unreachable).toBe(
+      false,
+    )
   })
 
   it.each(PAIRS)(
     '%s → %s: any single member of the group makes a route resolve',
     (from, to) => {
-      const requirement = requiredInputs(from, to)
+      const requirement = requiredInputs(membersOf(from), membersOf(to))
 
       if (requirement.requiredAnyOf.length === 0) {
-        expect(solve(bag([from]), to).resolved).toBe(true)
+        expect(resolvesAll(membersOf(from), to)).toBe(true)
         return
       }
 
       for (const extra of requirement.requiredAnyOf) {
-        const solution = solve(bag([from, extra]), to)
         expect(
-          solution.resolved,
+          resolvesAll([...membersOf(from), extra], to),
           `${from} + ${extra} → ${to}`,
         ).toBe(true)
-        expect(
-          solution.routes.some((route) => Number.isFinite(route.value)),
-        ).toBe(true)
       }
     },
   )
 
   it.each(PAIRS)(
-    '%s → %s: the from quantity alone is not enough when a group is demanded',
+    '%s → %s: the from quantities alone are not enough when a group is demanded',
     (from, to) => {
-      const requirement = requiredInputs(from, to)
+      const requirement = requiredInputs(membersOf(from), membersOf(to))
       if (requirement.requiredAnyOf.length === 0) return
-      expect(solve(bag([from]), to).resolved).toBe(false)
+      expect(resolvesAll(membersOf(from), to)).toBe(false)
     },
   )
 
   it.each(PAIRS)(
-    '%s → %s: never demands and offers the same quantity',
+    '%s → %s: never asks for a quantity that is already on either side',
     (from, to) => {
-      const { requiredAnyOf, optional } = requiredInputs(from, to)
-      for (const id of requiredAnyOf) expect(optional).not.toContain(id)
-      // A demanded group and an offered one are mutually exclusive: while
-      // anything is still missing there is nothing "extra" to offer.
-      if (requiredAnyOf.length > 0) expect(optional).toEqual([])
-    },
-  )
-
-  it.each(PAIRS)(
-    '%s → %s: never asks for the from or the to quantity',
-    (from, to) => {
-      const { requiredAnyOf, optional } = requiredInputs(from, to)
-      for (const id of [...requiredAnyOf, ...optional]) {
-        expect(id).not.toBe(from)
-        expect(id).not.toBe(to)
+      const { requiredAnyOf } = requiredInputs(membersOf(from), membersOf(to))
+      for (const id of requiredAnyOf) {
+        expect(membersOf(from)).not.toContain(id)
+        expect(membersOf(to)).not.toContain(id)
       }
     },
   )
 
-  it.each(PAIRS)('%s → %s: every optional input adds a route', (from, to) => {
-    const requirement = requiredInputs(from, to)
-    const baseline = solve(bag([from]), to).routes.filter((route) =>
-      Number.isFinite(route.value),
-    ).length
-    for (const extra of requirement.optional) {
-      const widened = solve(bag([from, extra]), to).routes.filter((route) =>
-        Number.isFinite(route.value),
-      ).length
-      expect(widened, `${from} + ${extra} → ${to}`).toBeGreaterThan(baseline)
-    }
+  /**
+   * Either arm's rate answers the same question, and CER is the one a paper
+   * always reports. A form that demanded EER would look arbitrary.
+   */
+  it.each(PAIRS)('%s → %s: never demands EER', (from, to) => {
+    expect(
+      requiredInputs(membersOf(from), membersOf(to)).requiredAnyOf,
+    ).not.toContain('eer')
   })
 })
 
 describe('the groups the owner specified', () => {
   /** Each listed candidate must appear in the derived group. */
-  const EXPECTED: [Quantity, Quantity, Quantity[]][] = [
-    ['or', 'rr', ['cer', 'eer']],
-    ['rr', 'or', ['cer', 'eer']],
-    ['cer', 'eer', ['rr', 'or']],
-    ['eer', 'cer', ['rr', 'or']],
-    ['rr', 'smd', ['cer', 'eer', 'or']],
-    ['cer', 'smd', ['eer', 'rr', 'or']],
-    ['eer', 'smd', ['cer', 'rr', 'or']],
-    ['smd', 'eer', ['cer']],
+  const EXPECTED: [Selection, Selection, Quantity[]][] = [
+    ['rr', 'rates', ['or']],
+    ['rr', 'or', ['cer']],
+    ['rr', 'smd', ['cer', 'or']],
+    ['or', 'rates', ['rr']],
+    ['or', 'rr', ['cer']],
+    ['smd', 'rates', ['rr']],
     ['smd', 'rr', ['cer']],
-    ['smd', 'cer', ['eer', 'rr']],
   ]
 
   it.each(EXPECTED)('%s → %s requires any one of %o', (from, to, expected) => {
-    const { requiredAnyOf } = requiredInputs(from, to)
+    const { requiredAnyOf } = requiredInputs(membersOf(from), membersOf(to))
     for (const id of expected) expect(requiredAnyOf).toContain(id)
   })
 
-  it('OR → SMD needs nothing, but offers the rates that unlock probit', () => {
-    expect(requiredInputs('or', 'smd')).toEqual({
-      from: 'or',
-      to: 'smd',
-      requiredAnyOf: [],
-      optional: ['cer', 'eer', 'rr'],
-      unreachable: false,
-    })
+  it('event rates in hand need nothing else', () => {
+    for (const to of ['rr', 'or', 'smd'] as Selection[]) {
+      expect(
+        requiredInputs(membersOf('rates'), membersOf(to)).requiredAnyOf,
+      ).toEqual([])
+    }
   })
 
-  it('SMD → OR needs nothing, but offers CER to unlock probit', () => {
-    expect(requiredInputs('smd', 'or')).toEqual({
-      from: 'smd',
-      to: 'or',
+  it('OR ↔ SMD needs nothing extra in either direction', () => {
+    expect(requiredInputs(['or'], ['smd'])).toEqual({
+      from: ['or'],
+      to: ['smd'],
       requiredAnyOf: [],
-      optional: ['cer'],
+      unreachable: false,
+    })
+    expect(requiredInputs(['smd'], ['or'])).toEqual({
+      from: ['smd'],
+      to: ['or'],
+      requiredAnyOf: [],
       unreachable: false,
     })
   })
 
   /**
    * Binary → binary is exact algebra. An SMD would also reach the target,
-   * approximately, and offering it alongside the two exact options would
-   * invite an assumption the reader does not need.
+   * approximately, and offering it alongside the exact option would invite an
+   * assumption the reader does not need.
    */
   it('never offers SMD as a way to complete an exact conversion', () => {
     for (const [from, to] of PAIRS) {
       if (from === 'smd' || to === 'smd') continue
-      expect(requiredInputs(from, to).requiredAnyOf).not.toContain('smd')
+      expect(
+        requiredInputs(membersOf(from), membersOf(to)).requiredAnyOf,
+      ).not.toContain('smd')
     }
   })
 
   it('matches the recorded groups', () => {
     const summary = PAIRS.map(([from, to]) => {
-      const requirement = requiredInputs(from, to)
+      const requirement = requiredInputs(membersOf(from), membersOf(to))
       const demanded = requirement.requiredAnyOf.join('|') || '—'
-      const offered = requirement.optional.join('|') || '—'
-      return `${from} → ${to}: need any of ${demanded}; optional ${offered}`
+      return `${from} → ${to}: need any of ${demanded}`
     })
     expect(summary).toMatchInlineSnapshot(`
       [
-        "cer → eer: need any of rr|or; optional —",
-        "cer → rr: need any of eer|or; optional —",
-        "cer → or: need any of eer|rr; optional —",
-        "cer → smd: need any of eer|rr|or; optional —",
-        "eer → cer: need any of rr|or; optional —",
-        "eer → rr: need any of cer|or; optional —",
-        "eer → or: need any of cer|rr; optional —",
-        "eer → smd: need any of cer|rr|or; optional —",
-        "rr → cer: need any of eer|or; optional —",
-        "rr → eer: need any of cer|or; optional —",
-        "rr → or: need any of cer|eer; optional —",
-        "rr → smd: need any of cer|eer|or; optional —",
-        "or → cer: need any of eer|rr; optional —",
-        "or → eer: need any of cer|rr; optional —",
-        "or → rr: need any of cer|eer; optional —",
-        "or → smd: need any of —; optional cer|eer|rr",
-        "smd → cer: need any of eer|rr; optional —",
-        "smd → eer: need any of cer|rr; optional —",
-        "smd → rr: need any of cer|eer; optional —",
-        "smd → or: need any of —; optional cer",
+        "rates → rr: need any of —",
+        "rates → or: need any of —",
+        "rates → smd: need any of —",
+        "rr → rates: need any of or",
+        "rr → or: need any of cer",
+        "rr → smd: need any of cer|or",
+        "or → rates: need any of rr",
+        "or → rr: need any of cer",
+        "or → smd: need any of —",
+        "smd → rates: need any of rr",
+        "smd → rr: need any of cer",
+        "smd → or: need any of —",
       ]
     `)
   })

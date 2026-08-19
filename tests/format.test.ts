@@ -5,8 +5,8 @@ describe('fmtNumber', () => {
   it.each([
     [0.35, '0.35'],
     [1.75, '1.75'],
-    [2.153846153846154, '2.1538'],
-    [0.4650031228567680, '0.465'],
+    [2.153846153846154, '2.15'],
+    [0.4650031228567680, '0.47'],
     [1, '1'],
     [0, '0'],
     [-0.5, '-0.5'],
@@ -26,9 +26,17 @@ describe('fmtNumber', () => {
     expect(fmtNumber(120)).toBe('120')
   })
 
-  it('honours a requested precision', () => {
-    expect(fmtNumber(2.153846153846154, { significant: 3 })).toBe('2.15')
-    expect(fmtNumber(2.153846153846154, { significant: 10 })).toBe('2.153846154')
+  // Two decimals would print "0.00", which reads as a failure rather than as
+  // a small number, so the fixed form gives way to significant digits.
+  it('falls back to significant digits when two decimals collapse to zero', () => {
+    expect(fmtNumber(0.0032)).toBe('0.0032')
+    expect(fmtNumber(-0.0032)).toBe('-0.0032')
+    expect(fmtNumber(0.001)).toBe('0.001')
+  })
+
+  it('honours a requested number of decimals', () => {
+    expect(fmtNumber(2.153846153846154, { decimals: 3 })).toBe('2.154')
+    expect(fmtNumber(2.153846153846154, { decimals: 9 })).toBe('2.153846154')
   })
 
   it.each([undefined, NaN, Infinity, -Infinity])(
@@ -45,8 +53,8 @@ describe('fmtNumber', () => {
 
 describe('fmtSigned', () => {
   it('marks the direction of an effect', () => {
-    expect(fmtSigned(0.4563)).toBe('+0.4563')
-    expect(fmtSigned(-0.4563)).toBe('-0.4563')
+    expect(fmtSigned(0.4563)).toBe('+0.46')
+    expect(fmtSigned(-0.4563)).toBe('-0.46')
     expect(fmtSigned(0)).toBe('0')
     expect(fmtSigned(NaN)).toBe(EMPTY_MARK)
   })
@@ -56,6 +64,7 @@ describe('fmtPercent', () => {
   it('renders a rate as a percentage', () => {
     expect(fmtPercent(0.2)).toBe('20%')
     expect(fmtPercent(0.3567)).toBe('35.67%')
+    expect(fmtPercent(0.000012)).toBe('0.0012%')
     expect(fmtPercent(undefined)).toBe(EMPTY_MARK)
   })
 })

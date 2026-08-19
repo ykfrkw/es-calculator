@@ -4,20 +4,22 @@ import type { Quantity, Values } from '@/lib/es/types'
 
 export interface DerivedStripProps {
   derived: Values
-  /** Shown in the result cards instead, so it is skipped here. */
-  target: Quantity
+  /** Shown in the result cards instead, so they are skipped here. */
+  targets: Quantity[]
   /** Typed by the reader, so not a derivation. */
   supplied: Quantity[]
 }
 
 /**
  * Everything else the inputs already determine. Picking one target should not
- * hide the other three quantities the same two numbers pin down.
+ * hide the other quantities the same two numbers pin down.
  */
-export function DerivedStrip({ derived, target, supplied }: DerivedStripProps) {
+export function DerivedStrip({ derived, targets, supplied }: DerivedStripProps) {
   const shown = QUANTITY_ORDER.filter(
     (id) =>
-      id !== target && !supplied.includes(id) && derived[id] !== undefined,
+      !targets.includes(id) &&
+      !supplied.includes(id) &&
+      derived[id] !== undefined,
   )
   if (shown.length === 0) return null
 
