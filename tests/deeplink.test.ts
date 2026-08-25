@@ -191,6 +191,18 @@ describe('round trip', () => {
     )
   })
 
+  /**
+   * A side is empty only while the reader is mid-choice. The link names the
+   * side that has a measure and lets a reload fall back to the default.
+   */
+  it('omits a side that holds no measure', () => {
+    expect(buildDeeplink({ from: 'or', to: null, values: {} })).toBe('?from=or')
+    expect(buildDeeplink({ from: null, to: 'smd', values: {} })).toBe('?to=smd')
+    expect(
+      buildDeeplink({ from: null, to: 'rates', values: { cer: '0.2' } }),
+    ).toBe('?to=rates&cer=0.2')
+  })
+
   it('omits blank and unparseable prefills', () => {
     const link = buildDeeplink({
       from: 'rates',

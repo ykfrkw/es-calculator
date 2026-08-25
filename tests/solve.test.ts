@@ -192,11 +192,12 @@ describe('requiredInputs', () => {
     })
   })
 
-  it('demands the ratio that lets a seeded SMD reach both rates', () => {
+  // A seeded SMD gives the odds ratio; one arm's rate then pins the other.
+  it('demands one arm rate to let a seeded SMD reach both rates', () => {
     expect(requiredInputs(['smd'], ['cer', 'eer'])).toEqual({
       from: ['smd'],
       to: ['cer', 'eer'],
-      requiredAnyOf: ['rr'],
+      requiredAnyOf: ['cer'],
       unreachable: false,
     })
   })

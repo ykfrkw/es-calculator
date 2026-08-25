@@ -20,8 +20,8 @@ import { QUANTITIES, listQuantities } from '@/lib/es/quantities'
 import { catalogEntry } from '@/lib/es/registry'
 import {
   SELECTIONS,
-  SELECTION_ORDER,
   membersOf,
+  selectSide,
   type Selection,
 } from '@/lib/es/selections'
 import { requiredInputs, solve } from '@/lib/es/solve'
@@ -80,6 +80,13 @@ function pendingNote(
     : `Needs ${listQuantities(requirement.requiredAnyOf)} as well — any one of them is enough to fix ${targetLabel}.`
 }
 
+/** Which half of the pair the reader still has to choose. */
+function missingSideNote(from: Selection | null): string {
+  return from === null
+    ? 'Pick the measure you are converting from.'
+    : 'Pick the measure you are converting to.'
+}
+
 function App() {
   // Parsed once: re-reading location on every render would fight the writer.
   const [state, setState] = useState<DeeplinkState>(() =>
@@ -103,46 +110,38 @@ function App() {
     return () => clearTimeout(timer)
   }, [state])
 
-  const targets = useMemo(() => membersOf(state.to), [state.to])
+  const { from, to } = state
 
+  const targets = useMemo(() => (to === null ? [] : membersOf(to)), [to])
+
+  // Undefined while a side is empty: there is no conversion to describe, so
+  // nothing downstream may run and produce a NaN to render.
   const requirement = useMemo(
-    () => requiredInputs(membersOf(state.from), targets),
-    [state.from, targets],
+    () =>
+      from === null || to === null
+        ? undefined
+        : requiredInputs(membersOf(from), targets),
+    [from, to, targets],
   )
 
   const known = useMemo(
-    () => numericValues(state, requirement, rateUnit),
+    () =>
+      requirement === undefined
+        ? {}
+        : numericValues(state, requirement, rateUnit),
     [state, requirement, rateUnit],
   )
 
   const solutions = useMemo(
-    () => targets.map((target) => solve(known, target)),
-    [known, targets],
+    () =>
+      requirement === undefined
+        ? []
+        : targets.map((target) => solve(known, target)),
+    [known, requirement, targets],
   )
 
-  // Picking a side that is already on the other row would leave the pair
-  // invalid, so the other side steps aside to the next free option.
-  const setFrom = (from: Selection): void => {
-    setState((current) => ({
-      ...current,
-      from,
-      to:
-        current.to === from
-          ? SELECTION_ORDER.find((candidate) => candidate !== from)!
-          : current.to,
-    }))
-  }
-
-  const setTo = (to: Selection): void => {
-    setState((current) => ({
-      ...current,
-      to,
-      from:
-        current.from === to
-          ? SELECTION_ORDER.find((candidate) => candidate !== to)!
-          : current.from,
-    }))
-  }
+  const pickSide = (side: 'from' | 'to', picked: Selection): void =>
+    setState((current) => ({ ...current, ...selectSide(current, side, picked) }))
 
   const setValue = (id: Quantity, value: string): void =>
     setState((current) => ({
@@ -150,17 +149,19 @@ function App() {
       values: { ...current.values, [id]: value },
     }))
 
-  const recipe = `${SELECTIONS[state.from].short} → ${SELECTIONS[state.to].short}`
   // The badge describes the conversion itself, not whether the reader has
   // finished typing — an unfilled form does not make exact algebra unavailable.
-  const conversionKind = catalogEntry(state.from, state.to)?.kind
+  const conversionKind =
+    from === null || to === null ? undefined : catalogEntry(from, to)?.kind
   const requirementSatisfied =
+    requirement === undefined ||
     requirement.requiredAnyOf.length === 0 ||
     requirement.requiredAnyOf.some((id) => known[id] !== undefined)
   const hasAnyInput = Object.keys(known).length > 0
   // Input errors depend on the values alone, so every target reports the same
   // list; printing one per target would show the reader each error twice.
-  const inputErrors = solutions[0].errors
+  const primary = solutions[0]
+  const inputErrors = primary === undefined ? [] : primary.errors
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 text-[hsl(var(--foreground))]">
@@ -173,37 +174,43 @@ function App() {
           <div className="grid gap-4 sm:grid-cols-2">
             <ConversionPicker
               label="Convert from"
-              value={state.from}
-              disabled={state.to}
-              onChange={setFrom}
+              value={from}
+              takenByOtherSide={to}
+              onChange={(picked) => pickSide('from', picked)}
               caption="One measure in. Anything else the conversion needs is asked for below."
             />
             <ConversionPicker
               label="Convert to"
-              value={state.to}
-              disabled={state.from}
-              onChange={setTo}
+              value={to}
+              takenByOtherSide={from}
+              onChange={(picked) => pickSide('to', picked)}
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md bg-[hsl(var(--secondary))] px-3 py-1.5 font-mono text-sm text-[hsl(var(--secondary-foreground))]">
-              {recipe}
-            </span>
-            <span
-              className={
-                conversionKind === 'exact'
-                  ? 'rounded-md bg-[hsl(var(--secondary))] px-2 py-1 text-xs font-medium text-[hsl(var(--secondary-foreground))]'
-                  : 'rounded-md border border-amber-500/50 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300'
-              }
-            >
-              {conversionKind === 'exact'
-                ? 'Exact'
-                : conversionKind === 'approximate'
-                  ? 'Approximate'
-                  : 'Not available'}
-            </span>
-          </div>
+          {from === null || to === null ? (
+            <p className="text-sm text-[hsl(var(--muted-foreground))]">
+              {missingSideNote(from)}
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md bg-[hsl(var(--secondary))] px-3 py-1.5 font-mono text-sm text-[hsl(var(--secondary-foreground))]">
+                {`${SELECTIONS[from].short} → ${SELECTIONS[to].short}`}
+              </span>
+              <span
+                className={
+                  conversionKind === 'exact'
+                    ? 'rounded-md bg-[hsl(var(--secondary))] px-2 py-1 text-xs font-medium text-[hsl(var(--secondary-foreground))]'
+                    : 'rounded-md border border-amber-500/50 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300'
+                }
+              >
+                {conversionKind === 'exact'
+                  ? 'Exact'
+                  : conversionKind === 'approximate'
+                    ? 'Approximate'
+                    : 'Not available'}
+              </span>
+            </div>
+          )}
 
           <SegmentedControl
             label="Rates entered as"
@@ -220,39 +227,49 @@ function App() {
             }
           />
 
-          <InputPanel
-            requirement={requirement}
-            values={state.values}
-            rateUnit={rateUnit}
-            satisfied={requirementSatisfied}
-            onChange={setValue}
-          />
+          {requirement !== undefined && (
+            <>
+              <InputPanel
+                requirement={requirement}
+                values={state.values}
+                rateUnit={rateUnit}
+                satisfied={requirementSatisfied}
+                onChange={setValue}
+              />
 
-          {inputErrors.length > 0 && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                <ul className="list-disc space-y-1 pl-4">
-                  {inputErrors.map((error, index) => (
-                    <li key={index}>{error.message}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-            </Alert>
+              {inputErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    <ul className="list-disc space-y-1 pl-4">
+                      {inputErrors.map((error, index) => (
+                        <li key={index}>{error.message}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {solutions.map((solution) => (
+                <RouteList
+                  key={solution.target}
+                  solution={solution}
+                  pendingNote={pendingNote(
+                    requirement,
+                    solution.target,
+                    hasAnyInput,
+                  )}
+                />
+              ))}
+
+              {primary !== undefined && (
+                <DerivedStrip
+                  derived={primary.derived}
+                  targets={targets}
+                  supplied={primary.from}
+                />
+              )}
+            </>
           )}
-
-          {solutions.map((solution) => (
-            <RouteList
-              key={solution.target}
-              solution={solution}
-              pendingNote={pendingNote(requirement, solution.target, hasAnyInput)}
-            />
-          ))}
-
-          <DerivedStrip
-            derived={solutions[0].derived}
-            targets={targets}
-            supplied={solutions[0].from}
-          />
 
           <Separator />
 

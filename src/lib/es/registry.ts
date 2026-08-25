@@ -43,13 +43,17 @@ function probe(ids: Quantity[]): Values {
 /**
  * The routes that resolve for a selection, across all of its targets.
  *
- * Converting to event rates runs the solver twice, once per rate, and both
- * runs offer the same methods — so the routes are keyed by id rather than
- * listed once per target.
+ * Converting to event rates can run the solver once per rate, and both runs
+ * offer the same methods — so the routes are keyed by id rather than listed
+ * once per target.
  */
 function resolvedRoutes(known: Values, targets: Quantity[]): Route[] {
   const byId = new Map<string, Route>()
   for (const target of targets) {
+    // The requirement can name one of the targets — one arm's rate to reach
+    // the other. Solving for it would record "Supplied directly" and bury
+    // the route that does the conversion.
+    if (known[target] !== undefined) continue
     for (const route of solve(known, target).routes) {
       if (!Number.isFinite(route.value)) continue
       if (!byId.has(route.id)) byId.set(route.id, route)
