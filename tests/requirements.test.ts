@@ -65,13 +65,28 @@ describe('requiredInputs over every ordered pair', () => {
     },
   )
 
+  /**
+   * The from side is already on the form. The to side is not: reaching both
+   * event rates from a ratio is exactly the case where one arm's rate is the
+   * input to ask for.
+   */
   it.each(PAIRS)(
-    '%s → %s: never asks for a quantity that is already on either side',
+    '%s → %s: never asks for a quantity already on the from side',
     (from, to) => {
       const { requiredAnyOf } = requiredInputs(membersOf(from), membersOf(to))
       for (const id of requiredAnyOf) {
         expect(membersOf(from)).not.toContain(id)
-        expect(membersOf(to)).not.toContain(id)
+      }
+    },
+  )
+
+  it.each(PAIRS)(
+    '%s → %s: never asks for the whole target group, which would convert nothing',
+    (from, to) => {
+      const targets = membersOf(to)
+      const { requiredAnyOf } = requiredInputs(membersOf(from), targets)
+      for (const id of requiredAnyOf) {
+        expect(targets.some((target) => target !== id)).toBe(true)
       }
     },
   )
@@ -90,18 +105,41 @@ describe('requiredInputs over every ordered pair', () => {
 describe('the groups the owner specified', () => {
   /** Each listed candidate must appear in the derived group. */
   const EXPECTED: [Selection, Selection, Quantity[]][] = [
-    ['rr', 'rates', ['or']],
+    ['rr', 'rates', ['cer']],
     ['rr', 'or', ['cer']],
     ['rr', 'smd', ['cer', 'or']],
-    ['or', 'rates', ['rr']],
+    ['or', 'rates', ['cer']],
     ['or', 'rr', ['cer']],
-    ['smd', 'rates', ['rr']],
+    ['smd', 'rates', ['cer']],
     ['smd', 'rr', ['cer']],
   ]
 
   it.each(EXPECTED)('%s → %s requires any one of %o', (from, to, expected) => {
     const { requiredAnyOf } = requiredInputs(membersOf(from), membersOf(to))
     for (const id of expected) expect(requiredAnyOf).toContain(id)
+  })
+
+  /**
+   * A ratio plus one arm's rate fixes the other arm. Asking for the other
+   * ratio instead is the roundabout input this rule exists to remove.
+   */
+  it('asks a ratio for CER alone when the target is the event rates', () => {
+    expect(requiredInputs(['or'], ['cer', 'eer']).requiredAnyOf).toEqual(['cer'])
+    expect(requiredInputs(['rr'], ['cer', 'eer']).requiredAnyOf).toEqual(['cer'])
+  })
+
+  it('reaches EER from CER by the exact rule for each ratio', () => {
+    const fromOr = solve(bag(['or', 'cer']), 'eer')
+    expect(fromOr.resolved).toBe(true)
+    expect(fromOr.routes[0].steps.map((step) => step.source)).toContain(
+      'eer_from_cer_or',
+    )
+
+    const fromRr = solve(bag(['rr', 'cer']), 'eer')
+    expect(fromRr.resolved).toBe(true)
+    expect(fromRr.routes[0].steps.map((step) => step.source)).toContain(
+      'eer_from_cer_rr',
+    )
   })
 
   it('event rates in hand need nothing else', () => {
@@ -152,13 +190,13 @@ describe('the groups the owner specified', () => {
         "rates → rr: need any of —",
         "rates → or: need any of —",
         "rates → smd: need any of —",
-        "rr → rates: need any of or",
+        "rr → rates: need any of cer",
         "rr → or: need any of cer",
         "rr → smd: need any of cer|or",
-        "or → rates: need any of rr",
+        "or → rates: need any of cer",
         "or → rr: need any of cer",
         "or → smd: need any of —",
-        "smd → rates: need any of rr",
+        "smd → rates: need any of cer",
         "smd → rr: need any of cer",
         "smd → or: need any of —",
       ]

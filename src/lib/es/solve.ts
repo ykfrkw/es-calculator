@@ -375,6 +375,10 @@ function reachesAllExactly(supplied: Quantity[], targets: Quantity[]): boolean {
  * Exact additions win over approximate ones: offering a latent-variable
  * conversion as an equal alternative to algebra would quietly invite the
  * reader to take an assumption they did not need.
+ *
+ * A member of the `to` group may itself be demanded. Reaching both event
+ * rates from a ratio takes one arm's rate, which is what the paper reports;
+ * demanding the other ratio instead sends the reader the long way round.
  */
 export function requiredInputs(
   from: Quantity[],
@@ -385,15 +389,24 @@ export function requiredInputs(
   }
 
   const candidates = AUXILIARY_QUANTITIES.filter(
-    (id) => !from.includes(id) && !to.includes(id),
+    (id) =>
+      !from.includes(id) &&
+      // A candidate that covers the whole target group is the answer the
+      // reader came for, not an input to it.
+      to.some((target) => target !== id),
   )
   const exactAdds = candidates.filter((candidate) =>
     reachesAllExactly([...from, candidate], to),
   )
-  const requiredAnyOf =
+  const tier =
     exactAdds.length > 0
       ? exactAdds
       : candidates.filter((candidate) => reachesAll([...from, candidate], to))
+
+  // One arm's rate pins the other arm directly; offering a ratio beside it
+  // would put the roundabout input back on the form.
+  const onTargetSide = tier.filter((candidate) => to.includes(candidate))
+  const requiredAnyOf = onTargetSide.length > 0 ? onTargetSide : tier
 
   return {
     from,

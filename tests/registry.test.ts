@@ -147,6 +147,21 @@ describe('conversion catalogue', () => {
     }
   })
 
+  /**
+   * Reaching both event rates asks for one of them, so the probe supplies a
+   * target. The route recorded has to be the one that derives the other arm,
+   * not the trivial "Supplied directly" for the arm that was handed over.
+   */
+  it('records the route that does the work, not the supplied target', () => {
+    for (const from of ['rr', 'or', 'smd'] as Selection[]) {
+      const entry = catalogEntry(from, 'rates')
+      expect(entry?.requiredAnyOf, `${from} → rates`).toEqual(['cer'])
+      for (const route of entry?.routes ?? []) {
+        expect(route.label, `${from} → rates`).not.toBe('Supplied directly')
+      }
+    }
+  })
+
   it('matches the recorded shape', () => {
     const summary = CONVERSION_CATALOG.map(
       (entry) =>
@@ -159,13 +174,13 @@ describe('conversion catalogue', () => {
         "rates → rr [exact] exact +—",
         "rates → or [exact] exact +—",
         "rates → smd [approximate] cox/hh +—",
-        "rr → rates [exact] exact +or",
+        "rr → rates [exact] exact +cer",
         "rr → or [exact] exact +cer",
         "rr → smd [approximate] cox/hh +cer|or",
-        "or → rates [exact] exact +rr",
+        "or → rates [exact] exact +cer",
         "or → rr [exact] exact +cer",
         "or → smd [approximate] cox/hh +—",
-        "smd → rates [approximate] cox/hh +rr",
+        "smd → rates [approximate] cox/hh +cer",
         "smd → rr [approximate] cox/hh +cer",
         "smd → or [approximate] cox/hh +—",
       ]

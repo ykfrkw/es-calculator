@@ -64,3 +64,27 @@ export function selectionOf(id: Quantity): Selection {
     SELECTIONS[candidate].members.includes(id),
   )!
 }
+
+/** The two sides of the picker. Either is null while it holds no measure. */
+export interface SelectionPair {
+  from: Selection | null
+  to: Selection | null
+}
+
+/**
+ * What clicking `picked` on one side does to both sides.
+ *
+ * A measure held by the other side moves across and leaves that side empty
+ * for the reader to fill. Shunting it to the next free option instead would
+ * put a conversion on screen that nobody asked for.
+ */
+export function selectSide(
+  pair: SelectionPair,
+  side: 'from' | 'to',
+  picked: Selection,
+): SelectionPair {
+  if (side === 'from') {
+    return { from: picked, to: pair.to === picked ? null : pair.to }
+  }
+  return { from: pair.from === picked ? null : pair.from, to: picked }
+}

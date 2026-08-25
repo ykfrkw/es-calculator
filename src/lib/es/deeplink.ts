@@ -6,8 +6,9 @@ import type { Quantity } from './types'
 export type ValueDraft = Partial<Record<Quantity, string>>
 
 export interface DeeplinkState {
-  from: Selection
-  to: Selection
+  /** Null while the reader has moved this measure to the other side. */
+  from: Selection | null
+  to: Selection | null
   values: ValueDraft
 }
 
@@ -71,6 +72,9 @@ function readValues(params: URLSearchParams): ValueDraft {
  * land on a working page rather than on an error: `from` as a comma list
  * (first valid id wins), a bare `cer` or `eer` where a selection is now
  * expected, and a self-contradictory pair, which falls back to the default.
+ *
+ * Never returns a half-chosen state. A side with no measure is transient UI
+ * the reader is in the middle of, not something a reload should reinstate.
  */
 export function parseDeeplink(search: string): DeeplinkState {
   const params = readParams(search ?? '')
@@ -99,8 +103,10 @@ export function parseDeeplink(search: string): DeeplinkState {
 /** The query string for a state, in a stable order so writes are idempotent. */
 export function buildDeeplink(state: DeeplinkState): string {
   const params = new URLSearchParams()
-  params.set('from', state.from)
-  params.set('to', state.to)
+  // An empty side is simply absent: writing `from=` would mint a link that
+  // parses back to the default rather than to what the reader is looking at.
+  if (state.from !== null) params.set('from', state.from)
+  if (state.to !== null) params.set('to', state.to)
   for (const id of QUANTITY_ORDER) {
     const text = state.values[id]?.trim()
     if (!text || !Number.isFinite(Number(text))) continue
