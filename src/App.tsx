@@ -140,6 +140,14 @@ function App() {
     [known, requirement, targets],
   )
 
+  // Reaching one event rate asks for the other, so a target can be a field the
+  // reader filled in. Echoing it back as a result card would answer a question
+  // nobody asked; the derived strip still carries the value.
+  const shownSolutions = useMemo(
+    () => solutions.filter((solution) => known[solution.target] === undefined),
+    [solutions, known],
+  )
+
   const pickSide = (side: 'from' | 'to', picked: Selection): void =>
     setState((current) => ({ ...current, ...selectSide(current, side, picked) }))
 
@@ -249,7 +257,7 @@ function App() {
                 </Alert>
               )}
 
-              {solutions.map((solution) => (
+              {shownSolutions.map((solution) => (
                 <RouteList
                   key={solution.target}
                   solution={solution}
